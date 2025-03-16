@@ -1,0 +1,29 @@
+# MultiTaskFlow 任务流配置示例
+# 此文件定义了一系列用于演示的模拟任务
+# 任务将依次执行，每个任务完成后才会开始下一个
+
+# 模拟深度学习训练任务
+- name: "数据预处理"
+  command: "python examples/scripts/data_preprocess.py --dataset coco --output-dir data/processed"
+  status: "pending"
+
+- name: "模型训练-阶段1"
+  command: "python examples/scripts/train_model.py --model yolov8 --epochs 5 --batch-size 32 --dataset data/processed"
+  status: "pending"
+
+- name: "模型评估-阶段1"
+  command: "python examples/scripts/evaluate_model.py --model-path checkpoints/yolov8_epoch_5.pt --dataset data/val"
+  status: "pending"
+
+- name: "模型训练-阶段2"
+  command: "python examples/scripts/train_model.py --model yolov8 --epochs 5 --batch-size 16 --resume checkpoints/yolov8_epoch_5.pt"
+  status: "pending"
+
+- name: "模型评估-阶段2"
+  command: "python examples/scripts/evaluate_model.py --model-path checkpoints/yolov8_epoch_5.pt --dataset data/val"
+  status: "pending"
+
+# 非Python任务示例
+- name: "数据归档"
+  command: "bash examples/scripts/archive_data.sh checkpoints/yolov8_epoch_5.pt results/"
+  status: "pending" 
