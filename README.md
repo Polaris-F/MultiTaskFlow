@@ -125,16 +125,6 @@ task_manager.add_task_by_config(
 )
 ```
 
-### 命令行使用
-
-```bash
-# 基本使用
-python -m multitaskflow --config path/to/your/tasks.yaml
-
-# 查看帮助
-python -m multitaskflow --help
-```
-
 ## 自定义与扩展
 
 MultiTaskFlow设计为可扩展的，您可以：
