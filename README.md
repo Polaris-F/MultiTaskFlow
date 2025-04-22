@@ -77,11 +77,24 @@ python examples/example.py
 git clone https://github.com/yourusername/MultiTaskFlow.git
 cd MultiTaskFlow
 
-# 安装依赖
-pip install -r requirements.txt
+# 方法1: 使用pip直接安装
+pip install .
 
-# 直接使用或安装到本地环境
+# 方法2: 开发模式安装
 pip install -e .
+```
+### 构建离线包方法
+
+如果您想构建wheel包或源码分发包，可以使用以下命令：
+
+```bash
+# 安装构建工具
+pip install build
+
+# 构建分发包
+python -m build
+
+# 构建的包会在dist/目录下生成
 ```
 
 ## 使用方法
@@ -123,6 +136,22 @@ task_manager.add_task_by_config(
     name="额外任务", 
     command="echo '这是一个动态添加的任务'"
 )
+```
+
+### 使用命令行工具（TODO check）
+
+安装后，您可以直接使用`taskflow`命令行工具：
+
+```bash
+# 使用配置文件运行任务流
+taskflow path/to/your/tasks.yaml
+
+# 使用默认配置
+# 如果不提供配置文件路径，将在examples/tasks.yaml创建示例配置
+taskflow
+
+# 查看帮助
+taskflow --help
 ```
 
 ## 自定义与扩展

@@ -525,29 +525,42 @@ class TaskFlow:
         """
         return self.running
 
-if __name__ == "__main__":
+def main():
     """
-    任务流管理器的使用示例
+    任务流管理器的命令行入口点
     
-    此示例展示了如何初始化和运行任务流管理器，
-    包括信号处理和异常捕获。
+    用法:
+        taskflow [config_file_path]
+    
+    参数:
+        config_file_path: 任务配置文件路径，默认为 examples/tasks.yaml
     """
+    import sys
+    import signal
+    from threading import Thread
+    
     def signal_handler(signum, frame):
         """处理终止信号"""
         print("\n接收到终止信号，正在优雅地停止任务流管理器...")
-        if 'manager' in locals() and manager.is_running():
+        if 'manager' in globals() and manager.is_running():
             manager.stop()
-        
+    
     # 注册信号处理器
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        # 检查是否存在配置文件，如果不存在则创建示例配置
-        config_path = "examples/tasks.yaml"
+        # 检查是否提供了配置文件路径
+        if len(sys.argv) > 1:
+            config_path = sys.argv[1]
+        else:
+            config_path = "examples/tasks.yaml"
+            
+        # 确保配置文件目录存在
         if not os.path.exists(os.path.dirname(config_path)):
             os.makedirs(os.path.dirname(config_path))
             
+        # 如果配置文件不存在，创建示例配置
         if not os.path.exists(config_path):
             with open(config_path, 'w', encoding='utf-8') as f:
                 f.write("""# 任务流配置示例
@@ -571,10 +584,17 @@ if __name__ == "__main__":
         manager_thread.join()
     except Exception as e:
         print(f"任务流管理器运行出错: {str(e)}")
-        if 'manager' in locals() and manager.is_running():
+        if 'manager' in globals() and manager.is_running():
             manager.stop()
     finally:
-        if 'manager' in locals() and manager.is_running():
+        if 'manager' in globals() and manager.is_running():
             manager.stop()
             if 'manager_thread' in locals() and manager_thread.is_alive():
-                manager_thread.join() 
+                manager_thread.join()
+
+
+if __name__ == "__main__":
+    """
+    任务流管理器的使用示例
+    """
+    main() 

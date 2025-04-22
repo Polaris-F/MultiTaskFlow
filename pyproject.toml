@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multitaskflow"
+version = "0.1.0"
+description = "一个用于管理和监控多个任务执行的Python工具"
+readme = "README.md"
+authors = [
+    {name = "Polaris", email = "polaris0532@outlook.com"}
+]
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.6"
+dependencies = [
+    "pyyaml>=5.1",
+    "psutil>=5.8.0",
+    "python-dotenv>=0.19.0",
+    "requests>=2.25.0",
+    "build>=0.10.0", # 添加构建工具依赖
+]
+
+[project.urls]
+"Homepage" = "https://github.com/Polaris-F/MultiTaskFlow"
+"Bug Tracker" = "https://github.com/Polaris-F/MultiTaskFlow/issues"
+
+[project.scripts]
+taskflow = "multitaskflow.task_flow:main"
+
+[tool.setuptools]
+packages = ["multitaskflow"] 
