@@ -99,7 +99,7 @@ python -m build
 
 ## 使用方法
 
-### 创建任务配置文件
+### 1. 创建任务配置文件
 
 创建一个YAML格式的任务配置文件，定义您要执行的任务序列：
 
@@ -118,7 +118,7 @@ python -m build
   status: "pending"
 ```
 
-### 使用Python API
+### 2. （方法一）使用Python API (推荐使用方法二、三)
 
 在您的Python代码中使用MultiTaskFlow：
 
@@ -138,7 +138,7 @@ task_manager.add_task_by_config(
 )
 ```
 
-### 使用命令行工具（TODO check）
+### 2. （方法二）使用命令行工具【使用场景：不需要后台运行，可实时查看输出】
 
 安装后，您可以直接使用`taskflow`命令行工具：
 
@@ -152,6 +152,13 @@ taskflow
 
 # 查看帮助
 taskflow --help
+```
+### 2. （方法三）使用sh脚本工具【使用场景：需要后台运行，通过log查看输出】
+首先```taskflowPro.sh```修改脚本中 ```TASK_CONFIG```为任务流yaml路径
+```bash
+chmod +x taskflowPro.sh
+./taskflowPro.sh start  # 开始运行
+./taskflowPro.sh stop   # 结束运行
 ```
 
 ## 自定义与扩展
