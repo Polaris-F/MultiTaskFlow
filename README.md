@@ -61,6 +61,8 @@ python -m build
 
 ## 使用方法
 
+**如果需要使用 消息接收功能，请访问 https://www.pushplus.plus/ 获取您的token**
+
 ### 1. 创建任务配置文件
 
 创建一个YAML格式的任务配置文件，定义您要执行的任务序列：
