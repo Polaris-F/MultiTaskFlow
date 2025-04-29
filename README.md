@@ -18,11 +18,46 @@ MultiTaskFlow 是一个轻量级的多任务流管理工具，用于按顺序执
 ### 要求
 
 - Python 3.7+
-- 依赖库：
-  - PyYAML >= 5.1
-  - psutil >= 5.8.0
-  - python-dotenv >= 0.19.0
-  - requests >= 2.25.0
+- PyYAML
+- 其他依赖库（如有）
+
+### 配置消息推送令牌
+
+在使用消息推送功能前，需要配置 MSG_PUSH_TOKEN 环境变量。以下是配置方法：
+
+#### 1. 永久配置（推荐）
+
+在 `~/.bashrc` 或 `~/.zshrc` 文件中添加：
+
+```bash
+# MultiTaskFlow 消息推送配置
+export MSG_PUSH_TOKEN="your_pushplus_token_here"
+```
+
+然后重新加载配置：
+```bash
+source ~/.bashrc  # 或 source ~/.zshrc
+```
+
+#### 2. 临时配置
+
+在运行命令前设置：
+```bash
+MSG_PUSH_TOKEN=your_token python your_script.py
+```
+
+#### 3. 开发模式配置
+
+在项目根目录创建 `.env` 文件：
+```bash
+echo "MSG_PUSH_TOKEN=your_token" > .env
+```
+
+#### 获取 Token
+
+1. 访问 [PushPlus 官网](https://www.pushplus.plus/)
+2. 注册并登录
+3. 在个人中心获取您的 token
 
 ### （方法1）从PyPI安装
 

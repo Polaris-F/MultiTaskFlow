@@ -45,8 +45,10 @@ def Msg_push(title: str, content: str, logger: Optional[logging.Logger] = None) 
         >>> Msg_push("错误警告", "服务器CPU使用率超过90%，请检查", my_logger)
     
     注意:
-        需要在.env文件中设置MSG_PUSH_TOKEN环境变量
-        PushPlus有消息发送频率限制，短时间内发送多条消息可能会失败
+        需要设置 MSG_PUSH_TOKEN 环境变量，可以通过以下方式设置：
+        1. 在 ~/.bashrc 或 ~/.zshrc 中添加: export MSG_PUSH_TOKEN=your_token
+        2. 在运行前临时设置: MSG_PUSH_TOKEN=your_token python your_script.py
+        3. 在 .env 文件中设置（仅开发模式）
     """
     # 如果没有提供logger，创建一个简单的logger
     if logger is None:
@@ -62,8 +64,32 @@ def Msg_push(title: str, content: str, logger: Optional[logging.Logger] = None) 
     # 加载token
     load_dotenv()
     token = os.getenv('MSG_PUSH_TOKEN')
+    
+    # 详细的token检查和处理
     if not token:
-        logger.warning("未找到MSG_PUSH_TOKEN环境变量，请在.env文件中设置")
+        error_msg = """
+        未找到 MSG_PUSH_TOKEN 环境变量！
+        
+        请通过以下方式之一设置 MSG_PUSH_TOKEN：
+        1. 在 ~/.bashrc 或 ~/.zshrc 中添加:
+           export MSG_PUSH_TOKEN=your_token
+           
+        2. 在运行前临时设置:
+           MSG_PUSH_TOKEN=your_token python your_script.py
+           
+        3. 在 .env 文件中设置（仅开发模式）
+        
+        获取 token 的方法：
+        1. 访问 https://www.pushplus.plus/
+        2. 登录并获取您的 token
+        3. 将 token 添加到上述配置中
+        """
+        logger.error(error_msg)
+        return False
+
+    # 检查token格式
+    if not isinstance(token, str) or len(token.strip()) == 0:
+        logger.error("MSG_PUSH_TOKEN 格式无效：应为非空字符串")
         return False
 
     data = {
@@ -101,9 +127,20 @@ def Msg_push(title: str, content: str, logger: Optional[logging.Logger] = None) 
                 time.sleep(wait_time)  # 遇到频率限制时额外等待
                 continue
             else:
-                logger.warning(f"消息发送失败，状态码: {response.status_code}, 返回: {response.text}")
+                error_msg = f"消息发送失败，状态码: {response.status_code}, 返回: {response.text}"
+                logger.warning(error_msg)
+                # 如果是token相关错误，提供更详细的提示
+                if result.get('code') in [401, 403]:
+                    logger.error("""
+                    Token 验证失败，请检查：
+                    1. MSG_PUSH_TOKEN 是否正确设置
+                    2. Token 是否已过期
+                    3. 是否在 pushplus.plus 平台正确配置
+                    """)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"网络请求失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
         except Exception as e:
-            logger.error(f"发送通知失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            logger.error(f"发送通知时发生未知错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
         
         # 如果不是最后一次尝试，等待一段时间后继续
         if attempt < max_retries - 1:
