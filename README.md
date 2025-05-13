@@ -12,6 +12,7 @@ MultiTaskFlow 是一个轻量级的多任务流管理工具，用于按顺序执
 - 完整的日志记录和任务执行历史
 - 进程PID跟踪与管理
 - 优雅的信号处理和任务终止
+- 支持静默模式，可跳过消息通知
 
 ## 安装方法
 
@@ -21,11 +22,13 @@ MultiTaskFlow 是一个轻量级的多任务流管理工具，用于按顺序执
 - PyYAML
 - 其他依赖库（如有）
 
-### 配置消息推送令牌
+### 配置消息推送令牌和静默模式
+
+#### 消息推送令牌
 
 在使用消息推送功能前，需要配置 MSG_PUSH_TOKEN 环境变量。以下是配置方法：
 
-#### 1. 永久配置（推荐）
+##### 1. 永久配置（推荐）
 
 在 `~/.bashrc` 或 `~/.zshrc` 文件中添加：
 
@@ -39,18 +42,50 @@ export MSG_PUSH_TOKEN="your_pushplus_token_here"
 source ~/.bashrc  # 或 source ~/.zshrc
 ```
 
-#### 2. 临时配置
+##### 2. 临时配置
 
 在运行命令前设置：
 ```bash
 MSG_PUSH_TOKEN=your_token python your_script.py
 ```
 
-#### 3. 开发模式配置
+##### 3. 开发模式配置
 
 在项目根目录创建 `.env` 文件：
 ```bash
 echo "MSG_PUSH_TOKEN=your_token" > .env
+```
+
+#### 静默模式配置
+
+如果您不希望收到消息通知，可以启用静默模式：
+
+##### 1. 永久配置静默模式
+
+在 `~/.bashrc` 或 `~/.zshrc` 文件中添加：
+
+```bash
+# MultiTaskFlow 静默模式配置
+export MTF_SILENT_MODE=true
+```
+
+然后重新加载配置：
+```bash
+source ~/.bashrc  # 或 source ~/.zshrc
+```
+
+##### 2. 临时配置静默模式
+
+在运行命令前设置：
+```bash
+MTF_SILENT_MODE=true taskflow your_tasks.yaml
+```
+
+##### 3. 开发模式配置静默模式
+
+在项目根目录创建或编辑 `.env` 文件：
+```bash
+echo "MTF_SILENT_MODE=true" >> .env
 ```
 
 #### 获取 Token
@@ -107,17 +142,14 @@ python -m build
 - name: "任务1-数据准备"
   command: "python scripts/prepare_data.py --input data/raw --output data/processed"
   status: "pending"
-  # silent: false  # 默认会发送消息通知
 
 - name: "任务2-模型训练"
   command: "python scripts/train_model.py --data data/processed --epochs 10"
   status: "pending"
-  silent: true  # 静默模式，不发送消息通知
 
 - name: "任务3-结果评估"
   command: "python scripts/evaluate.py --model-path models/latest.pt"
   status: "pending"
-  # silent: false  # 默认会发送消息通知
 ```
 
 ### 2. （方法一）使用Python API (推荐使用方法二、三)
@@ -136,8 +168,7 @@ task_manager.run()
 # 您也可以动态添加任务
 task_manager.add_task_by_config(
     name="额外任务", 
-    command="echo '这是一个动态添加的任务'",
-    silent=True  # 设置为静默模式，不发送消息通知
+    command="echo '这是一个动态添加的任务'"
 )
 ```
 
@@ -221,39 +252,42 @@ taskflow examples/tasks.yaml
   retry: 3  # 失败后重试次数 (TODO)
   timeout: 3600  # 任务超时时间（秒）(TODO)
   depends_on: ["前置任务名称"]  # 依赖的任务 (TODO)
-  silent: false  # 是否静默执行（不发送消息通知）
 ```
 
 ### 静默模式
 
-MultiTaskFlow 支持静默模式，可以通过配置让某些任务不发送消息通知。这对于以下场景非常有用：
+MultiTaskFlow 支持静默模式，在此模式下不会发送任何消息通知。这对于以下场景非常有用：
 
-- **中间过程任务**：对于工作流中的中间步骤，可能不需要收到每个步骤的通知
-- **调试阶段任务**：在开发和调试阶段，可以关闭消息通知以避免干扰
-- **高频执行任务**：对于频繁执行的任务，可以只关注最终结果而不是每次执行
+- **生产环境部署**：在生产环境中运行时，可能不需要消息通知
+- **调试阶段**：开发和调试过程中避免频繁接收通知
+- **批量任务**：执行大量批处理任务时，只关注最终结果而非每个任务
+- **CI/CD 流程**：在自动化构建流水线中使用，避免触发过多通知
 
-#### 配置静默模式：
+#### 启用静默模式
 
-1. **在YAML配置文件中**：
-   ```yaml
-   - name: "静默任务"
-     command: "python script.py"
-     silent: true  # 设置为静默模式
-   ```
+静默模式通过环境变量 `MTF_SILENT_MODE` 控制：
 
-2. **通过API动态添加**：
-   ```python
-   task_manager.add_task_by_config(
-       name="静默任务", 
-       command="echo '这是静默任务'",
-       silent=True
-   )
-   ```
+```bash
+# 启用静默模式
+export MTF_SILENT_MODE=true
 
-当任务设置为静默模式时：
-- 任务执行时不会发送消息通知
-- 任务信息仍会记录在日志文件中
-- 如果所有任务都是静默模式，任务流管理器结束时也不会发送总结报告
+# 临时启用
+MTF_SILENT_MODE=true taskflow tasks.yaml
+```
+
+支持的值：
+- 设为 `true`, `1`, `yes`, `on` 表示启用静默模式
+- 不设置或设为其他值表示禁用静默模式
+
+#### 静默模式的工作原理
+
+当启用静默模式时：
+1. 所有任务执行完成后不会发送消息通知
+2. 任务管理器完成时不会发送总结报告
+3. 所有操作和结果仍会记录在日志文件中
+4. 控制台输出不受影响，仍然会显示所有信息
+
+注意，静默模式只影响消息通知行为，不会改变任务的实际执行过程。
 
 ### 自定义通知
 
@@ -324,4 +358,4 @@ class CustomTaskFlow(TaskFlow):
 ## 作者与致谢
 
 - **主要开发者**: [Polaris](https://github.com/Polaris-F)
-- 感谢所有贡献者和使用者的宝贵反馈 
+- 感谢所有贡献者和使用者的宝贵反馈

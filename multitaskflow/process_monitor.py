@@ -161,7 +161,6 @@ class ProcessMonitor(Thread):
         process_cmd: 进程命令，用于查找进程
         pid: 进程ID
         start_time: 进程开始时间
-        silent: 是否静默执行（不发送消息通知）
         
     Methods:
         set_result: 设置任务执行结果和错误信息
@@ -183,7 +182,7 @@ class ProcessMonitor(Thread):
         """
     }
 
-    def __init__(self, process_name: str, process_cmd: str, logger: logging.Logger, start_time: datetime = None, silent: bool = False):
+    def __init__(self, process_name: str, process_cmd: str, logger: logging.Logger, start_time: datetime = None):
         """
         初始化进程监控器
         
@@ -192,7 +191,6 @@ class ProcessMonitor(Thread):
             process_cmd: 进程命令（用于查找进程）
             logger: 日志记录器
             start_time: 开始时间，默认为当前时间
-            silent: 是否静默执行（不发送消息通知），默认为False
         """
         super().__init__()
         self.process_name = process_name
@@ -202,7 +200,6 @@ class ProcessMonitor(Thread):
         self.daemon = True  # 设置为守护线程，随主线程退出
         self.return_code = None
         self.error_message = None
-        self.silent = silent
         load_dotenv()
         self.pid = self._find_process_pid()
 
@@ -305,11 +302,16 @@ class ProcessMonitor(Thread):
         """
         发送进程结束通知
         
-        如果设置了silent=True，将跳过消息发送，只记录日志
+        如果设置了环境变量MTF_SILENT_MODE=true，将跳过消息发送，只记录日志
         
         Returns:
             bool: 通知是否发送成功
         """
+        # 首先检查环境变量，实现基于环境变量的静默模式
+        if os.getenv('MTF_SILENT_MODE', '').lower() in ('true', '1', 'yes', 'on'):
+            self.logger.info(f"环境变量MTF_SILENT_MODE已设置为{os.getenv('MTF_SILENT_MODE')}，跳过消息发送")
+            return True
+            
         status = "成功完成" if self.return_code == 0 else "执行失败"
         error_msg = f"错误信息: {self.error_message}" if self.error_message else ""
         
@@ -325,11 +327,6 @@ class ProcessMonitor(Thread):
         # 记录任务完成日志
         self.logger.info(f"任务 {self.process_name} 已{status}，运行时长: {self.get_duration()}")
         
-        # 如果设置了静默模式，跳过消息发送
-        if self.silent:
-            self.logger.info("任务设置为静默模式，跳过消息发送")
-            return True
-            
         return Msg_push(self.MESSAGE_TEMPLATE["title"], content, self.logger)
 
 def setup_logger(name: str, log_dir: str = "logs") -> logging.Logger:
