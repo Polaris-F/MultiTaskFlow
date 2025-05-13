@@ -63,6 +63,7 @@ class Task:
         end_time: 结束时间
         return_code: 命令返回值
         duration: 执行时长
+        silent: 是否静默执行（不发送消息通知）
     """
     
     STATUS_PENDING = "pending"
@@ -70,7 +71,7 @@ class Task:
     STATUS_COMPLETED = "completed"
     STATUS_FAILED = "failed"
 
-    def __init__(self, name: str, command: str, status: str = STATUS_PENDING):
+    def __init__(self, name: str, command: str, status: str = STATUS_PENDING, silent: bool = False):
         """
         初始化任务实例
         
@@ -78,6 +79,7 @@ class Task:
             name: 任务名称
             command: 要执行的命令行字符串
             status: 初始状态，默认为"pending"
+            silent: 是否静默执行（不发送消息通知），默认为False
         """
         self.name = name
         self.command = command
@@ -89,6 +91,7 @@ class Task:
         self.error_message = None
         self.duration = None
         self.monitor = None
+        self.silent = silent
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -105,7 +108,8 @@ class Task:
             "end_time": self.end_time.strftime('%Y-%m-%d %H:%M:%S') if self.end_time else None,
             "duration": str(self.duration) if self.duration else "未完成",
             "return_code": self.return_code,
-            "error_message": self.error_message
+            "error_message": self.error_message,
+            "silent": self.silent
         }
 
     def update_duration(self):
@@ -241,6 +245,11 @@ class TaskFlow:
         从配置文件加载初始任务
         
         配置文件应为YAML格式，包含任务列表，每个任务需指定名称和命令
+        任务可以包含以下参数：
+        - name: 任务名称（必需）
+        - command: 要执行的命令（必需）
+        - status: 任务状态（可选，默认为"pending"）
+        - silent: 是否静默执行（可选，默认为False，设为True时不发送消息通知）
         """
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -253,7 +262,8 @@ class TaskFlow:
                 task = Task(
                     name=task_config['name'],
                     command=task_config['command'],
-                    status=task_config.get('status', 'pending')
+                    status=task_config.get('status', 'pending'),
+                    silent=task_config.get('silent', False)
                 )
                 self.add_task(task)
                 
@@ -275,18 +285,19 @@ class TaskFlow:
             self.total_tasks += 1
         self.logger.info(f"新任务已添加: {task.name}")
 
-    def add_task_by_config(self, name: str, command: str):
+    def add_task_by_config(self, name: str, command: str, silent: bool = False):
         """
         通过参数添加新任务
         
         Args:
             name: 任务名称
             command: 要执行的命令
+            silent: 是否静默执行（不发送消息通知），默认为False
             
         Returns:
             Task: 新添加的任务实例
         """
-        task = Task(name=name, command=command)
+        task = Task(name=name, command=command, silent=silent)
         self.add_task(task)
         return task
 
@@ -381,6 +392,9 @@ class TaskFlow:
         self.logger.info(f"开始执行任务: {task.name}")
         self.logger.info(f"执行命令: {task.command}")
         
+        if task.silent:
+            self.logger.info("任务设置为静默模式，不会发送消息通知")
+            
         task.start()
         
         try:
@@ -399,7 +413,8 @@ class TaskFlow:
                 process_name=task.name,
                 process_cmd=task.command,
                 logger=self.logger,
-                start_time=task.start_time
+                start_time=task.start_time,
+                silent=task.silent  # 传递静默模式设置
             )
             task.monitor.start()
             
@@ -459,7 +474,8 @@ class TaskFlow:
                     task = Task(
                         name=task_config['name'],
                         command=task_config['command'],
-                        status=task_config.get('status', 'pending')
+                        status=task_config.get('status', 'pending'),
+                        silent=task_config.get('silent', False)
                     )
                     self.add_task(task)
                     
@@ -518,6 +534,8 @@ class TaskFlow:
     def stop(self):
         """
         停止任务流管理器并发送总结报告
+        
+        如果所有任务都是静默模式，则不发送总结报告
         """
         self.stop_event.set()
         self.logger.info("正在停止任务流管理器...")
@@ -526,15 +544,23 @@ class TaskFlow:
         if self.running:
             self.end_time = datetime.now()
             summary = self.generate_summary()
-            self.logger.info("发送任务总结报告...")
-            self.logger.info(summary)  # 在日志中也记录摘要
+            self.logger.info("任务总结报告:")
+            self.logger.info(summary)  # 在日志中记录摘要
             
-            # 发送总结报告
-            Msg_push(
-                title="任务流管理器执行报告",
-                content=summary,
-                logger=self.logger
-            )
+            # 检查是否所有任务都是静默模式
+            all_silent = all(task.silent for task in self.tasks if len(self.tasks) > 0)
+            
+            # 只有在非静默模式下才发送总结报告
+            if not all_silent:
+                # 发送总结报告
+                self.logger.info("发送任务总结报告...")
+                Msg_push(
+                    title="任务流管理器执行报告",
+                    content=summary,
+                    logger=self.logger
+                )
+            else:
+                self.logger.info("所有任务都设置为静默模式，跳过发送总结报告")
 
     def is_running(self) -> bool:
         """

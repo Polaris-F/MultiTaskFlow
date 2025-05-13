@@ -107,14 +107,17 @@ python -m build
 - name: "任务1-数据准备"
   command: "python scripts/prepare_data.py --input data/raw --output data/processed"
   status: "pending"
+  # silent: false  # 默认会发送消息通知
 
 - name: "任务2-模型训练"
   command: "python scripts/train_model.py --data data/processed --epochs 10"
   status: "pending"
+  silent: true  # 静默模式，不发送消息通知
 
 - name: "任务3-结果评估"
   command: "python scripts/evaluate.py --model-path models/latest.pt"
   status: "pending"
+  # silent: false  # 默认会发送消息通知
 ```
 
 ### 2. （方法一）使用Python API (推荐使用方法二、三)
@@ -133,7 +136,8 @@ task_manager.run()
 # 您也可以动态添加任务
 task_manager.add_task_by_config(
     name="额外任务", 
-    command="echo '这是一个动态添加的任务'"
+    command="echo '这是一个动态添加的任务'",
+    silent=True  # 设置为静默模式，不发送消息通知
 )
 ```
 
@@ -214,13 +218,42 @@ taskflow examples/tasks.yaml
 - name: "示例任务"
   command: "python script.py"
   status: "pending"  # pending, running, completed, failed
-  retry: 3  # 失败后重试次数
-  timeout: 3600  # 任务超时时间（秒）
-  depends_on: ["前置任务名称"]  # 依赖的任务
-  env:  # 环境变量设置
-    KEY1: "VALUE1"
-    KEY2: "VALUE2"
+  retry: 3  # 失败后重试次数 (TODO)
+  timeout: 3600  # 任务超时时间（秒）(TODO)
+  depends_on: ["前置任务名称"]  # 依赖的任务 (TODO)
+  silent: false  # 是否静默执行（不发送消息通知）
 ```
+
+### 静默模式
+
+MultiTaskFlow 支持静默模式，可以通过配置让某些任务不发送消息通知。这对于以下场景非常有用：
+
+- **中间过程任务**：对于工作流中的中间步骤，可能不需要收到每个步骤的通知
+- **调试阶段任务**：在开发和调试阶段，可以关闭消息通知以避免干扰
+- **高频执行任务**：对于频繁执行的任务，可以只关注最终结果而不是每次执行
+
+#### 配置静默模式：
+
+1. **在YAML配置文件中**：
+   ```yaml
+   - name: "静默任务"
+     command: "python script.py"
+     silent: true  # 设置为静默模式
+   ```
+
+2. **通过API动态添加**：
+   ```python
+   task_manager.add_task_by_config(
+       name="静默任务", 
+       command="echo '这是静默任务'",
+       silent=True
+   )
+   ```
+
+当任务设置为静默模式时：
+- 任务执行时不会发送消息通知
+- 任务信息仍会记录在日志文件中
+- 如果所有任务都是静默模式，任务流管理器结束时也不会发送总结报告
 
 ### 自定义通知
 
