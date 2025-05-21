@@ -68,7 +68,7 @@ case $ACTION in
     start)
         # 启动任务函数
         ## 获取当前日期
-        current_date=$(date +%Y%m%d)
+        current_date=$(date +%Y%m%d_%H%M%S)
         echo -e "${BLUE}运行日期: ${current_date}${NC}"
 
         ## 检查日志目录
@@ -78,7 +78,7 @@ case $ACTION in
         fi
 
         ## 日志文件名
-        log_file="${log_dir}/TaskFlow_${current_date}.log"
+        log_file="${log_dir}/TaskFlow_full_${current_date}.log"
         echo -e "${BLUE}日志将保存至: ${log_file}${NC}"
 
         ## 激活conda环境
