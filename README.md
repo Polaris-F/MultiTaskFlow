@@ -13,6 +13,9 @@ MultiTaskFlow 是一个轻量级的多任务流管理工具，用于按顺序执
 - 进程PID跟踪与管理
 - 优雅的信号处理和任务终止
 - 支持静默模式，可跳过消息通知
+- **智能环境变量加载**：优先从配置文件同目录查找 `.env` 文件
+- **环境变量配置检查**：启动时自动显示环境变量配置状态
+- **彩色输出支持**：可选安装 colorama 获得更友好的输出体验
 
 ## 安装方法
 
@@ -24,11 +27,65 @@ MultiTaskFlow 是一个轻量级的多任务流管理工具，用于按顺序执
 
 ### 配置消息推送令牌和静默模式
 
+#### 环境变量文件 (.env) 加载机制
+
+MultiTaskFlow 采用智能的 `.env` 文件加载策略，按以下优先级查找：
+
+1. **配置文件同目录**（推荐）：与 `tasks.yaml` 放在同一目录
+   ```
+   /your/project/
+   ├── tasks.yaml
+   └── .env          # 优先加载这个
+   ```
+
+2. **当前工作目录**：运行命令时的工作目录
+   ```
+   /current/directory/
+   └── .env          # 次优先
+   ```
+
+3. **向上递归查找**：从当前目录向上查找直到找到 `.env` 文件
+
+**优势**：
+- 不同项目可以有独立的环境配置
+- 配置文件和环境变量放在一起，便于管理
+- 启动时会显示加载的 `.env` 文件位置，方便确认
+
+#### 环境变量配置检查
+
+启动时，MultiTaskFlow 会自动显示环境变量配置状态：
+
+```
+============================================================
+                    [环境变量配置检查]
+============================================================
+  .env 文件: /path/to/your/.env
+  MSG_PUSH_TOKEN: AT_abc123...xyz789 (已配置)
+  MTF_SILENT_MODE: false (消息推送已启用)
+============================================================
+```
+
+- Token 会脱敏显示（仅显示前后各6位）
+- 如果未找到 `.env` 文件，会提示推荐的创建位置
+- 运行过程中修改 `.env` 文件，下一个任务会自动检测并显示变化
+
 #### 消息推送令牌
 
 在使用消息推送功能前，需要配置 MSG_PUSH_TOKEN 环境变量。以下是配置方法：
 
-##### 1. 永久配置（推荐）
+##### 1. 推荐方式：在配置文件同目录创建 .env 文件
+
+在您的任务配置文件（如 `tasks.yaml`）同目录下创建 `.env` 文件：
+
+```bash
+# .env 文件内容
+MSG_PUSH_TOKEN=your_pushplus_token_here
+MTF_SILENT_MODE=false
+```
+
+**优势**：配置随项目走，不影响其他项目。
+
+##### 2. 永久配置（全局）
 
 在 `~/.bashrc` 或 `~/.zshrc` 文件中添加：
 
@@ -42,25 +99,25 @@ export MSG_PUSH_TOKEN="your_pushplus_token_here"
 source ~/.bashrc  # 或 source ~/.zshrc
 ```
 
-##### 2. 临时配置
+##### 3. 临时配置
 
 在运行命令前设置：
 ```bash
 MSG_PUSH_TOKEN=your_token python your_script.py
 ```
 
-##### 3. 开发模式配置
-
-在项目根目录创建 `.env` 文件：
-```bash
-echo "MSG_PUSH_TOKEN=your_token" > .env
-```
-
 #### 静默模式配置
 
-如果您不希望收到消息通知，可以启用静默模式：
+如果您不希望收到消息通知，可以启用静默模式。
 
-##### 1. 永久配置静默模式
+##### 1. 推荐方式：在 .env 文件中配置
+
+```bash
+# .env 文件内容
+MTF_SILENT_MODE=true
+```
+
+##### 2. 永久配置静默模式（全局）
 
 在 `~/.bashrc` 或 `~/.zshrc` 文件中添加：
 
@@ -74,19 +131,16 @@ export MTF_SILENT_MODE=true
 source ~/.bashrc  # 或 source ~/.zshrc
 ```
 
-##### 2. 临时配置静默模式
+##### 3. 临时配置静默模式
 
 在运行命令前设置：
 ```bash
 MTF_SILENT_MODE=true taskflow your_tasks.yaml
 ```
 
-##### 3. 开发模式配置静默模式
-
-在项目根目录创建或编辑 `.env` 文件：
-```bash
-echo "MTF_SILENT_MODE=true" >> .env
-```
+**支持的值**：
+- 启用静默模式：`true`, `1`, `yes`, `on`
+- 禁用静默模式：`false`, `0`, `no`, `off` 或不设置
 
 #### 获取 Token
 
@@ -97,9 +151,17 @@ echo "MTF_SILENT_MODE=true" >> .env
 ### （方法1）从PyPI安装
 
 ```bash
-# 使用pip直接安装
+# 基础安装
 pip install multitaskflow
+
+# 安装并启用彩色输出（推荐）
+pip install multitaskflow[color]
 ```
+
+**彩色输出功能**：
+- 安装 `colorama` 后，环境变量配置检查会以彩色显示
+- 绿色表示已配置，红色表示未设置，黄色表示警告
+- 如果不安装，会自动回退到普通文本输出，完全不影响功能
 
 ### （方法2）从源码安装
 
@@ -248,10 +310,26 @@ taskflow examples/tasks.yaml
 ```yaml
 - name: "示例任务"
   command: "python script.py"
-  status: "pending"  # pending, running, completed, failed
+  status: "pending"  # pending, running, completed, failed, skipped
   retry: 3  # 失败后重试次数 (TODO)
   timeout: 3600  # 任务超时时间（秒）(TODO)
   depends_on: ["前置任务名称"]  # 依赖的任务 (TODO)
+```
+
+**status 字段说明**：
+- `pending`: 待执行（默认值）
+- `running`: 执行中（系统自动设置）
+- `completed`: 已完成（系统自动设置）
+- `failed`: 执行失败（系统自动设置）
+- `skipped`: 跳过执行（手动设置，加载时会被过滤）
+
+**使用 skipped 状态**：
+如果您不想执行某个任务，可以在配置文件中将其 status 设置为 `skipped`，该任务将不会被加载到执行队列中。
+
+```yaml
+- name: "临时禁用的任务"
+  command: "python old_script.py"
+  status: "skipped"  # 这个任务不会执行
 ```
 
 ### 静默模式
@@ -329,6 +407,54 @@ class CustomTaskFlow(TaskFlow):
         # 继续处理...
         super().process_task_output(task, output)
 ```
+
+## TODO / 计划中的功能
+
+### 🔄 动态任务管理（计划中）
+
+**功能描述**：支持运行时监控配置文件变化，实现任务的动态增删改
+
+**实现方案**：
+- 使用 `watchdog` 库监控 YAML 配置文件变化
+- 基于任务 ID 的增量更新机制
+- 支持以下动态操作：
+  - ✅ **新增任务**：在配置中添加新任务（需有唯一 ID）会自动加入执行队列
+  - ✅ **标记跳过**：将任务 status 改为 `skipped` 可从队列中移除
+  - ✅ **删除任务**：从配置中删除的任务会从队列中移除
+  - ✅ **更新参数**：修改现有任务参数（保持 ID 不变）会更新队列中的任务
+
+**配置要求**：
+```yaml
+# 每个任务必须有唯一的 id 字段
+tasks:
+  - id: task_a          # 必须唯一
+    name: "数据预处理"
+    command: "python preprocess.py"
+    status: pending     # pending | running | completed | failed | skipped
+    
+  - id: task_b
+    name: "模型训练"
+    command: "python train.py"
+    status: pending
+    
+  - id: task_c
+    name: "旧任务"
+    status: skipped     # 标记为跳过，不会执行
+```
+
+**使用场景**：
+1. 长时间运行的任务流中，临时禁用某些任务
+2. 根据前面任务的结果动态添加新任务
+3. 修正配置错误而不需要重启整个流程
+
+**技术实现**：
+- 依赖：`watchdog>=2.1.0`
+- 核心逻辑：文件变化监听 + ID 去重 + 队列增量更新
+- 日志输出：实时显示任务的添加、移除、更新操作
+
+**当前状态**：设计阶段，欢迎反馈和建议
+
+---
 
 ## 常见问题（FAQ）
 

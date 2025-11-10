@@ -32,9 +32,10 @@ import requests
 import sys
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime, timedelta
+from pathlib import Path
 import yaml
 from threading import Thread, Event, Lock
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from queue import Queue
 import queue
 import signal
@@ -69,8 +70,9 @@ class Task:
     STATUS_RUNNING = "running"
     STATUS_COMPLETED = "completed"
     STATUS_FAILED = "failed"
+    STATUS_SKIPPED = "skipped"  # 跳过的任务
 
-    def __init__(self, name: str, command: str, status: str = STATUS_PENDING):
+    def __init__(self, name: str, command: str, status: str = STATUS_PENDING, env: Dict[str, str] = None):
         """
         初始化任务实例
         
@@ -78,10 +80,12 @@ class Task:
             name: 任务名称
             command: 要执行的命令行字符串
             status: 初始状态，默认为"pending"
+            env: 任务级环境变量字典，可选
         """
         self.name = name
         self.command = command
         self.status = status
+        self.env = env or {}  # 任务级环境变量
         self.start_time = None
         self.end_time = None
         self.return_code = None
@@ -161,6 +165,7 @@ class TaskFlow:
             config_path: 任务配置文件路径
         """
         self.config_path = config_path
+        self.config_dir = Path(config_path).parent  # 记录配置文件所在目录
         self.tasks: List[Task] = []
         self.logger = self._setup_logger()
         self.task_queue = Queue()
@@ -173,8 +178,17 @@ class TaskFlow:
         # 初始化任务计数器
         self._reset_task_counters()
         
+        # 用于跟踪环境变量变化
+        self._last_env_info = None
+        
         self.logger.info(self.TASK_DIVIDER)
         self.logger.info("任务流管理器初始化...")
+        
+        # 首次加载环境变量并显示配置
+        env_info = self._load_env()
+        self._show_env_config(env_info)
+        self._last_env_info = env_info
+        
         self.load_tasks()
         self.logger.info(self.TASK_DIVIDER)
 
@@ -236,6 +250,162 @@ class TaskFlow:
         
         return logger
 
+    def _load_env(self) -> Dict[str, Any]:
+        """
+        按优先级加载环境变量文件
+        
+        优先级顺序：
+        1. 配置文件同目录的 .env
+        2. 当前工作目录的 .env
+        3. 向上递归查找的 .env
+        
+        Returns:
+            Dict: 包含加载信息的字典 {
+                'env_file': 加载的.env文件路径或None,
+                'token': MSG_PUSH_TOKEN的值或None,
+                'silent_mode': MTF_SILENT_MODE的值
+            }
+        """
+        env_file = None
+        
+        # 1. 配置文件同目录
+        config_dir_env = self.config_dir / ".env"
+        if config_dir_env.exists():
+            load_dotenv(config_dir_env, override=True)
+            env_file = str(config_dir_env)
+            self.logger.debug(f"环境变量加载: {config_dir_env}")
+        
+        # 2. 当前工作目录
+        elif (cwd_env := Path.cwd() / ".env").exists():
+            load_dotenv(cwd_env, override=True)
+            env_file = str(cwd_env)
+            self.logger.debug(f"环境变量加载: {cwd_env}")
+        
+        # 3. 向上递归查找
+        elif (found_env := find_dotenv()):
+            load_dotenv(found_env, override=True)
+            env_file = found_env
+            self.logger.debug(f"环境变量加载: {found_env}")
+        
+        # 读取环境变量
+        token = os.getenv('MSG_PUSH_TOKEN')
+        silent_mode = os.getenv('MTF_SILENT_MODE', 'false')
+        
+        return {
+            'env_file': env_file,
+            'recommended_path': str(config_dir_env),
+            'token': token,
+            'silent_mode': silent_mode
+        }
+
+    def _show_env_config(self, env_info: Dict[str, Any]):
+        """
+        显示环境变量配置信息（带颜色高亮）
+        
+        Args:
+            env_info: _load_env() 返回的环境变量信息字典
+        """
+        # 尝试导入 colorama
+        try:
+            from colorama import Fore, Style, init
+            init(autoreset=True)
+            use_color = True
+        except ImportError:
+            # 如果没有安装 colorama，使用普通文本
+            use_color = False
+            if not hasattr(self, '_colorama_warning_shown'):
+                self.logger.warning("未安装 colorama 库，使用普通文本显示。可运行 'pip install colorama' 启用彩色输出")
+                self._colorama_warning_shown = True
+            # 定义空的颜色代码
+            class Fore:
+                GREEN = YELLOW = RED = CYAN = MAGENTA = ""
+            class Style:
+                RESET_ALL = BRIGHT = ""
+        
+        divider = "=" * 60
+        print(f"\n{divider}")
+        
+        # 标题：区分全局配置和任务级配置
+        is_task_env = env_info.get('task_env', False)
+        if is_task_env:
+            if use_color:
+                print(f"{'[环境变量配置检查 - 任务级配置]':^60}".replace('[环境变量配置检查 - 任务级配置]', f'{Fore.MAGENTA}[环境变量配置检查 - 任务级配置]{Style.RESET_ALL}'))
+            else:
+                print(f"{'[环境变量配置检查 - 任务级配置]':^60}")
+        else:
+            print(f"{'[环境变量配置检查]':^60}")
+        
+        print(divider)
+        
+        # 显示 .env 文件位置
+        if env_info['env_file']:
+            if use_color:
+                print(f"  .env 文件: {Fore.GREEN}{env_info['env_file']}{Style.RESET_ALL}")
+            else:
+                print(f"  .env 文件: {env_info['env_file']}")
+        else:
+            if use_color:
+                print(f"  .env 文件: {Fore.RED}未找到{Style.RESET_ALL}")
+                print(f"  推荐位置: {Fore.YELLOW}{env_info['recommended_path']}{Style.RESET_ALL}")
+            else:
+                print(f"  .env 文件: 未找到")
+                print(f"  推荐位置: {env_info['recommended_path']}")
+        
+        # 显示 MSG_PUSH_TOKEN
+        token = env_info['token']
+        if token:
+            # 脱敏显示：前6位...后6位
+            if len(token) > 12:
+                masked_token = f"{token[:6]}...{token[-6:]}"
+            else:
+                masked_token = f"{token[:3]}...{token[-3:]}" if len(token) > 6 else "***"
+            
+            if use_color:
+                print(f"  MSG_PUSH_TOKEN: {Fore.GREEN}{masked_token}{Style.RESET_ALL} {Fore.CYAN}(已配置){Style.RESET_ALL}")
+            else:
+                print(f"  MSG_PUSH_TOKEN: {masked_token} (已配置)")
+        else:
+            if use_color:
+                print(f"  MSG_PUSH_TOKEN: {Fore.RED}❌ 未设置{Style.RESET_ALL}")
+            else:
+                print(f"  MSG_PUSH_TOKEN: ❌ 未设置")
+        
+        # 显示 MTF_SILENT_MODE
+        silent = env_info['silent_mode'].lower() in ('true', '1', 'yes', 'on')
+        if silent:
+            if use_color:
+                print(f"  MTF_SILENT_MODE: {Fore.YELLOW}{env_info['silent_mode']}{Style.RESET_ALL} {Fore.YELLOW}(全局静默模式已启用){Style.RESET_ALL}")
+            else:
+                print(f"  MTF_SILENT_MODE: {env_info['silent_mode']} (全局静默模式已启用)")
+        else:
+            if use_color:
+                print(f"  MTF_SILENT_MODE: {Fore.GREEN}{env_info['silent_mode']}{Style.RESET_ALL} (消息推送已启用)")
+            else:
+                print(f"  MTF_SILENT_MODE: {env_info['silent_mode']} (消息推送已启用)")
+        
+        print(divider)
+        print()
+
+    def _env_changed(self, new_env_info: Dict[str, Any]) -> bool:
+        """
+        检查环境变量配置是否发生变化
+        
+        Args:
+            new_env_info: 新的环境变量信息
+            
+        Returns:
+            bool: 如果配置有变化返回 True，否则返回 False
+        """
+        if self._last_env_info is None:
+            return True
+        
+        # 比较关键字段
+        return (
+            self._last_env_info['env_file'] != new_env_info['env_file'] or
+            self._last_env_info['token'] != new_env_info['token'] or
+            self._last_env_info['silent_mode'] != new_env_info['silent_mode']
+        )
+
     def load_tasks(self):
         """
         从配置文件加载初始任务
@@ -245,6 +415,9 @@ class TaskFlow:
         - name: 任务名称（必需）
         - command: 要执行的命令（必需）
         - status: 任务状态（可选，默认为"pending"）
+        - env: 任务级环境变量（可选，字典格式）
+        
+        注意：status 为 "skipped" 的任务将不会被加载到任务队列中
         """
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -252,16 +425,28 @@ class TaskFlow:
                 
             if not isinstance(task_list, list):
                 raise ValueError("配置文件格式错误：应该是任务列表")
-                
+            
+            skipped_count = 0
             for task_config in task_list:
+                status = task_config.get('status', 'pending')
+                
+                # 跳过状态为 skipped 的任务
+                if status == 'skipped':
+                    skipped_count += 1
+                    self.logger.info(f"跳过任务: {task_config['name']} (status: skipped)")
+                    continue
+                
                 task = Task(
                     name=task_config['name'],
                     command=task_config['command'],
-                    status=task_config.get('status', 'pending')
+                    status=status,
+                    env=task_config.get('env', {})
                 )
                 self.add_task(task)
-                
-            self.logger.info(f"已加载 {len(self.tasks)} 个初始任务")
+            
+            self.logger.info(f"已加载 {len(self.tasks)} 个任务")
+            if skipped_count > 0:
+                self.logger.info(f"跳过了 {skipped_count} 个任务 (status: skipped)")
         except Exception as e:
             self.logger.error(f"加载任务配置失败: {str(e)}")
             raise
@@ -385,6 +570,40 @@ class TaskFlow:
         self.logger.info(f"开始执行任务: {task.name}")
         self.logger.info(f"执行命令: {task.command}")
         
+        # 在任务执行前重新加载环境变量（支持运行时更新 .env 文件）
+        env_info = self._load_env()
+        
+        # 保存原始环境变量（用于任务执行后恢复）
+        original_env = {}
+        
+        # 如果任务有自定义环境变量
+        if task.env:
+            self.logger.info(f"任务使用自定义环境变量: {list(task.env.keys())}")
+            
+            # 保存原始值
+            for key in task.env.keys():
+                original_env[key] = os.environ.get(key)
+            
+            # 设置任务级环境变量
+            for key, value in task.env.items():
+                os.environ[key] = str(value)
+            
+            # 更新 env_info 以显示任务级配置
+            env_info['token'] = os.getenv('MSG_PUSH_TOKEN')
+            env_info['silent_mode'] = os.getenv('MTF_SILENT_MODE', 'false')
+            env_info['task_env'] = True  # 标记为任务级配置
+            
+            # 显示任务级环境变量配置
+            self._show_env_config(env_info)
+            # 更新 last_env_info，避免下个任务误认为没变化
+            self._last_env_info = env_info.copy()
+        else:
+            # 检查环境变量是否有变化，有变化才显示
+            if self._env_changed(env_info):
+                self.logger.info("检测到环境变量配置变化")
+                self._show_env_config(env_info)
+                self._last_env_info = env_info
+        
         task.start()
         
         try:
@@ -440,6 +659,17 @@ class TaskFlow:
             self.logger.error(f"异常信息: {error_msg}")
             return False
         finally:
+            # 恢复原始环境变量
+            if task.env and original_env:
+                self.logger.debug("恢复原始环境变量")
+                for key, value in original_env.items():
+                    if value is None:
+                        # 原来没有这个变量，删除它
+                        os.environ.pop(key, None)
+                    else:
+                        # 恢复原来的值
+                        os.environ[key] = value
+            
             self._update_task_counters()
             self.logger.info(self.TASK_DIVIDER)
 

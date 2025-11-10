@@ -10,13 +10,13 @@ MultiTaskFlow - 多任务流管理工具
 
 作者: LHF
 许可证: MIT
-版本: 0.1.0
+版本: 0.1.5
 """
 
 from .task_flow import TaskFlow, Task
 from .process_monitor import ProcessMonitor, Msg_push
 
-__version__ = '0.1.0'
+__version__ = '0.1.5'
 __author__ = 'LHF'
 
 __all__ = [

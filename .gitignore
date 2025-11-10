@@ -3,6 +3,7 @@
 demo/
 local_test.py
 .env
+tmp
 
 # Python
 __pycache__/

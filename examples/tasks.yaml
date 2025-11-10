@@ -18,10 +18,11 @@
   status: "pending"
   # silent: false  # 默认会发送消息通知
 
-- name: "模型训练-阶段2"
+# 跳过的任务示例 - 临时禁用
+- name: "模型训练-阶段2（暂时跳过）"
   command: "python examples/scripts/train_model.py --model yolov8 --epochs 5 --batch-size 16 --resume checkpoints/yolov8_epoch_5.pt"
-  status: "pending"
-  silent: true  # 静默模式，不发送消息通知
+  status: "skipped"  # 设置为 skipped，此任务不会执行
+  # 当需要恢复执行时，将 status 改回 pending
 
 - name: "模型评估-阶段2"
   command: "python examples/scripts/evaluate_model.py --model-path checkpoints/yolov8_epoch_5.pt --dataset data/val"
