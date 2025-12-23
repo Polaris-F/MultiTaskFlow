@@ -120,7 +120,7 @@ def Msg_push(title: str, content: str, logger: Optional[logging.Logger] = None) 
             
             result = response.json()
             if response.status_code == 200 and result.get('code') == 200:
-                logger.info("消息发送成功")
+                logger.info("\n消息发送成功\n")
                 return True
             elif result.get('code') == 429:  # 频率限制错误码
                 logger.warning(f"消息发送受到频率限制，将在 {wait_time} 秒后重试...")
@@ -292,7 +292,7 @@ class ProcessMonitor(Thread):
         while True:
             is_running = self.check_process()
             if was_running and not is_running:
-                self.logger.info(f"进程 {self.process_name} (PID: {self.pid}) 已结束")
+                self.logger.info(f"\n进程 {self.process_name} (PID: {self.pid}) 已结束\n")
                 self.send_notification()
                 break
             time.sleep(10)  # 每10秒检查一次
@@ -325,7 +325,7 @@ class ProcessMonitor(Thread):
         )
         
         # 记录任务完成日志
-        self.logger.info(f"任务 {self.process_name} 已{status}，运行时长: {self.get_duration()}")
+        self.logger.info(f"\n任务 {self.process_name} 已{status}，运行时长: {self.get_duration()}\n")
         
         return Msg_push(self.MESSAGE_TEMPLATE["title"], content, self.logger)
 
