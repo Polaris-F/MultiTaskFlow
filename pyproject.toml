@@ -35,6 +35,11 @@ dependencies = [
 
 [project.optional-dependencies]
 color = ["colorama>=0.4.0"]
+web = [
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "watchdog>=3.0.0",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/Polaris-F/MultiTaskFlow"
@@ -46,4 +51,4 @@ color = ["colorama>=0.4.0"]
 taskflow = "multitaskflow.task_flow:main"
 
 [tool.setuptools]
-packages = ["multitaskflow"]
+packages = ["multitaskflow", "multitaskflow.web", "multitaskflow.web.api"]

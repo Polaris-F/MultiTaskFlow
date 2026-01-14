@@ -4,6 +4,8 @@ demo/
 local_test.py
 .env
 tmp
+.workspace.json
+.history.json
 
 # Python
 __pycache__/
