@@ -4,11 +4,11 @@
 # 配置你的conda环境名称
 CONDA_ENV="pytorch24"
 # 配置你的主脚本名称（如果不使用shell命令）
-SCRIPT_NAME="MultiTaskFlow.py"
+SCRIPT_NAME="MultiTaskFlow.py" # 没有 taskflow 的时候使用
 # 配置PID文件名称
 PID_FILE_NAME="multitaskflow.pid"
 # 任务配置文件路径（完整路径，例如：/path/to/your/TaskFlow.yaml）
-TASK_CONFIG="path/to/your/TaskFlow.yaml"
+TASK_CONFIG="/userhome/lhf/Codes/WorkSpace/VisDrone/TaskFlow.yaml"
 # 配置等待时间（秒）
 WAIT_TIME=3
 #============================
