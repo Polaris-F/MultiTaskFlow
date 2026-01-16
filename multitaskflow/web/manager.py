@@ -100,16 +100,23 @@ class TaskManager:
     - 维护执行历史
     """
     
-    def __init__(self, config_path: str, history_file: str = None):
+    def __init__(self, config_path: str, history_file: str = None, 
+                 on_task_started=None, on_task_finished=None):
         """
         初始化任务管理器
         
         Args:
             config_path: 任务配置文件路径
             history_file: 历史记录文件路径（可选）
+            on_task_started: 任务启动回调 (task_id, pid, log_file) -> None
+            on_task_finished: 任务完成回调 (task_id) -> None
         """
         self.config_path = Path(config_path).resolve()  # 确保使用绝对路径
         self.config_dir = self.config_path.parent
+        
+        # 回调函数（用于 PID 持久化）
+        self.on_task_started = on_task_started
+        self.on_task_finished = on_task_finished
         
         # 任务存储
         self.tasks: Dict[str, Task] = {}  # id -> Task
@@ -130,10 +137,9 @@ class TaskManager:
         self.log_dir = self.config_dir / "logs" / "tasks"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
-        # 主进程日志文件（包含 YAML 文件名以区分不同队列）
-        from datetime import datetime as dt
+        # 主进程日志文件（使用固定文件名，追加模式）
         yaml_name = self.config_path.stem  # 获取 YAML 文件名（不含扩展名）
-        main_log_name = f"webui_{yaml_name}_{dt.now().strftime('%Y%m%d_%H%M%S')}.log"
+        main_log_name = f"webui_{yaml_name}.log"  # 固定文件名，不含时间戳
         self.main_log_file = str(self.config_dir / "logs" / main_log_name)
         
         # 历史记录管理器
@@ -152,10 +158,16 @@ class TaskManager:
         # 清除现有处理器（防止重复添加）
         self.logger.handlers.clear()
         
-        # 添加文件处理器
-        file_handler = logging.FileHandler(self.main_log_file, encoding='utf-8')
+        # 添加文件处理器（追加模式）
+        file_handler = logging.FileHandler(self.main_log_file, mode='a', encoding='utf-8')
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         self.logger.addHandler(file_handler)
+        
+        # 记录启动信息
+        from datetime import datetime as dt
+        self.logger.info(f"=" * 50)
+        self.logger.info(f"TaskFlow WebUI 启动 - {dt.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        self.logger.info(f"=" * 50)
     
     def _generate_task_id(self) -> str:
         """生成任务ID - 使用 UUID 确保全局唯一性"""
@@ -560,7 +572,10 @@ class TaskManager:
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
             env['PYTHONUNBUFFERED'] = '1'  # 禁用输出缓冲，实时显示日志
+            env['COLUMNS'] = '120'  # 限制终端宽度，使进度条等适配 WebUI 显示
             
+            # 使用 start_new_session=True 使任务进程独立于 WebUI 进程
+            # 这样 WebUI 重启不会终止正在运行的任务
             task.process = subprocess.Popen(
                 task.command,
                 shell=True,
@@ -569,12 +584,17 @@ class TaskManager:
                 cwd=str(self.config_dir),
                 text=True,
                 encoding='utf-8',
-                env=env
+                env=env,
+                start_new_session=True  # 创建新会话，进程独立
             )
             
             # 从待执行列表移除
             if task_id in self.task_order:
                 self.task_order.remove(task_id)
+        
+        # 调用启动回调（用于持久化 PID）
+        if self.on_task_started:
+            self.on_task_started(task.id, task.process.pid, task.log_file, task.name, task.command)
         
         # 启动监控线程
         monitor_thread = threading.Thread(
@@ -584,7 +604,7 @@ class TaskManager:
         )
         monitor_thread.start()
         
-        self.logger.info(f"启动任务: {task.name} (PID: {task.process.pid})")
+        self.logger.info(f"启动任务: {task.name} (PID: {task.process.pid}, 独立进程)")
         return task
     
     def _monitor_task(self, task: Task):
@@ -606,6 +626,10 @@ class TaskManager:
         # 添加到历史（持久化）
         self.history_manager.add(task.to_dict())
         
+        # 调用完成回调（用于从持久化存储移除 PID）
+        if self.on_task_finished:
+            self.on_task_finished(task.id)
+        
         # 从任务列表移除
         with self._lock:
             if task.id in self.tasks:
@@ -626,11 +650,25 @@ class TaskManager:
             return False
         
         if task.process:
-            task.process.terminate()
+            import os
+            import signal
+            
             try:
-                task.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                task.process.kill()
+                # 使用进程组终止（因为启动时使用了 start_new_session=True）
+                # 这会终止主进程及其所有子进程
+                pgid = os.getpgid(task.process.pid)
+                os.killpg(pgid, signal.SIGTERM)
+                
+                try:
+                    task.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    # 如果 SIGTERM 没有效果，使用 SIGKILL
+                    os.killpg(pgid, signal.SIGKILL)
+                    task.process.wait(timeout=3)
+                    
+            except (ProcessLookupError, OSError) as e:
+                # 进程可能已经结束
+                self.logger.warning(f"停止任务进程时出错: {e}")
             
             task.status = TaskStatus.STOPPED
             task.end_time = datetime.now()

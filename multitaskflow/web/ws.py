@@ -20,6 +20,42 @@ router = APIRouter()
 logger = logging.getLogger("WebSocket")
 
 
+def clean_progress_bar_output(content: str) -> str:
+    """
+    清理日志输出中的回车符 (\\r)，保留 ANSI 颜色代码让 xterm.js 渲染
+    
+    进度条使用 \\r 回到行首覆盖显示，我们需要：
+    1. 找到连续的 \\r 分隔的内容块（没有 \\n 分隔）
+    2. 只保留每个块的最后一帧
+    3. 确保输出有正确的换行
+    """
+    if '\r' not in content:
+        return content
+    
+    result = []
+    lines = content.split('\n')
+    
+    for line in lines:
+        if '\r' not in line:
+            result.append(line)
+        else:
+            # 这一行包含多个被 \r 分隔的"帧"
+            parts = line.split('\r')
+            
+            # 处理策略：只保留最后一个非空的帧
+            # \r 的语义是"回到行首"，所以最后一个帧是最终显示的内容
+            last_non_empty = ''
+            for part in reversed(parts):
+                if part.strip():
+                    last_non_empty = part
+                    break
+            
+            if last_non_empty:
+                result.append(last_non_empty)
+    
+    return '\n'.join(result)
+
+
 class LogStreamer:
     """日志流管理器"""
     
@@ -28,6 +64,8 @@ class LogStreamer:
         self.connections: Dict[str, Set[WebSocket]] = {}
         # task_id -> last read position
         self.file_positions: Dict[str, int] = {}
+        # task_id -> 不完整行的缓冲区（等待下次读取补全）
+        self.line_buffers: Dict[str, str] = {}
     
     async def connect(self, task_id: str, websocket: WebSocket):
         """建立连接"""
@@ -49,8 +87,9 @@ class LogStreamer:
             self.connections[task_id].discard(websocket)
             if not self.connections[task_id]:
                 del self.connections[task_id]
-                # 清理文件位置记录
+                # 清理文件位置记录和行缓冲区
                 self.file_positions.pop(task_id, None)
+                self.line_buffers.pop(task_id, None)
         
         logger.info(f"WebSocket 断开: task={task_id}")
     
@@ -98,19 +137,35 @@ class LogStreamer:
                     return
             
             log_path = Path(task.log_file)
-            last_pos = self.file_positions.get(task_id, 0)
+            # 每个连接独立的读取位置和行缓冲区（不共享）
+            last_pos = 0
+            line_buffer = ''
             
-            # 先发送历史日志
-            if log_path.exists() and last_pos == 0:
-                with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            # 发送初始化信息（包含日志文件路径）
+            await websocket.send_json({
+                "type": "init",
+                "log_file": str(task.log_file),
+                "task_name": task.name
+            })
+            
+            # 先发送历史日志（只发送最后 N 行以加快加载）
+            MAX_HISTORY_LINES = 500
+            if log_path.exists():
+                with open(log_path, 'r', encoding='utf-8', errors='replace', newline='') as f:
                     content = f.read()
                     if content:
+                        # 清理回车符但保留ANSI颜色
+                        cleaned = clean_progress_bar_output(content)
+                        # 只保留最后 N 行
+                        lines = cleaned.split('\n')
+                        if len(lines) > MAX_HISTORY_LINES:
+                            cleaned = f"... (前 {len(lines) - MAX_HISTORY_LINES} 行已省略，可使用复制命令查看完整日志)\n" + '\n'.join(lines[-MAX_HISTORY_LINES:])
+                        
                         await websocket.send_json({
                             "type": "log",
-                            "content": content
+                            "content": cleaned
                         })
                     last_pos = f.tell()
-                    self.file_positions[task_id] = last_pos
             
             # 持续读取新内容
             while True:
@@ -120,13 +175,15 @@ class LogStreamer:
                 if not task or task.status.value not in ("running",):
                     # 读取剩余日志
                     if log_path.exists():
-                        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                        with open(log_path, 'r', encoding='utf-8', errors='replace', newline='') as f:
                             f.seek(last_pos)
                             remaining = f.read()
-                            if remaining:
+                            # 合并缓冲区中的内容
+                            final_content = line_buffer + remaining
+                            if final_content:
                                 await websocket.send_json({
                                     "type": "log",
-                                    "content": remaining
+                                    "content": clean_progress_bar_output(final_content)
                                 })
                     
                     await websocket.send_json({
@@ -138,16 +195,32 @@ class LogStreamer:
                 
                 # 读取新日志内容
                 if log_path.exists():
-                    with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                    with open(log_path, 'r', encoding='utf-8', errors='replace', newline='') as f:
                         f.seek(last_pos)
                         new_content = f.read()
                         if new_content:
-                            await websocket.send_json({
-                                "type": "log",
-                                "content": new_content
-                            })
+                            # 合并上次未完成的行
+                            full_content = line_buffer + new_content
+                            
+                            # 找到最后一个换行符，分离完整行和不完整行
+                            last_newline = full_content.rfind('\n')
+                            
+                            if last_newline >= 0:
+                                # 有完整行
+                                complete_lines = full_content[:last_newline + 1]
+                                line_buffer = full_content[last_newline + 1:]
+                                
+                                # 发送清理后的完整行
+                                if complete_lines:
+                                    await websocket.send_json({
+                                        "type": "log",
+                                        "content": clean_progress_bar_output(complete_lines)
+                                    })
+                            else:
+                                # 没有完整行，全部缓冲
+                                line_buffer = full_content
+                            
                             last_pos = f.tell()
-                            self.file_positions[task_id] = last_pos
                 
                 await asyncio.sleep(0.5)  # 每 0.5 秒检查一次
                 

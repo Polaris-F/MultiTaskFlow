@@ -3,7 +3,7 @@ import { useTaskStore } from './stores/taskStore';
 import { useQueueStore } from './stores/queueStore';
 import { Header } from './components/Header';
 import { Toolbar } from './components/Toolbar';
-import { TaskTable } from './components/TaskTable';
+import { TaskTable, StatusLegend } from './components/TaskTable';
 import { LogPanel } from './components/LogPanel';
 import { ToastContainer } from './components/Toast';
 import { FilterTabs, type FilterType } from './components/FilterTabs';
@@ -149,6 +149,7 @@ function App() {
           <>
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <FilterTabs current={filter} onChange={setFilter} counts={filterCounts} />
+              <StatusLegend />
               <Toolbar onAddTask={handleAddTask} />
             </div>
 

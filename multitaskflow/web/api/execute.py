@@ -66,6 +66,7 @@ async def stop_all():
 @router.post("/start-queue")
 async def start_queue():
     """开始自动队列执行（按顺序执行所有待执行任务）"""
+    from .state import get_queue_manager
     manager = get_task_manager()
     
     if manager is None:
@@ -79,6 +80,12 @@ async def start_queue():
         return {"success": False, "message": "没有待执行的任务"}
     
     manager.start_queue()
+    
+    # 保存队列状态
+    queue_manager = get_queue_manager()
+    if queue_manager:
+        queue_manager._save_workspace()
+    
     return {
         "success": True, 
         "message": f"队列已启动，共 {len(pending)} 个任务"
@@ -88,10 +95,17 @@ async def start_queue():
 @router.post("/stop-queue")
 async def stop_queue():
     """停止队列自动执行（完成当前任务后停止）"""
+    from .state import get_queue_manager
     manager = get_task_manager()
     if manager is None:
         return {"success": True, "message": "无队列运行"}
     manager.stop_queue()
+    
+    # 保存队列状态
+    queue_manager = get_queue_manager()
+    if queue_manager:
+        queue_manager._save_workspace()
+    
     return {"success": True, "message": "队列将在当前任务完成后停止"}
 
 
@@ -140,8 +154,13 @@ async def get_main_log(lines: int = 200):
         }
     
     try:
-        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+        from ..ws import clean_progress_bar_output
+        
+        with open(log_path, 'r', encoding='utf-8', errors='replace', newline='') as f:
             content = f.read()
+        
+        # 清理进度条输出
+        content = clean_progress_bar_output(content)
         
         # 只返回最后 N 行
         all_lines = content.split('\n')
@@ -294,8 +313,13 @@ async def get_log_content(task_id: str, lines: int = 500):
         raise HTTPException(status_code=404, detail="日志文件不存在")
     
     try:
-        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+        from ..ws import clean_progress_bar_output
+        
+        with open(log_path, 'r', encoding='utf-8', errors='replace', newline='') as f:
             content = f.read()
+        
+        # 清理进度条输出
+        content = clean_progress_bar_output(content)
         
         # 只返回最后 N 行
         all_lines = content.split('\n')

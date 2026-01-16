@@ -60,12 +60,13 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # 关闭时清理
+    # 关闭时只停止队列调度，不终止运行中的任务进程
+    # 任务进程是独立进程，WebUI 重启后可恢复监控
     try:
         queue_manager = get_queue_manager()
         for queue in queue_manager.queues.values():
-            queue.stop_queue()
-            queue.stop_all()
+            queue.stop_queue()  # 停止队列自动执行
+            # 不再调用 stop_all()，让任务进程继续运行
     except RuntimeError:
         pass
     clear_state()

@@ -6,16 +6,19 @@
 
 管理多个独立的任务队列，每个队列对应一个 YAML 配置文件。
 支持跨队列 GPU 冲突检测。
+支持任务进程独立：WebUI 重启不影响运行中的任务。
 """
 
 import json
 import uuid
 import logging
+import threading
+import psutil
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
-from .manager import TaskManager
+from .manager import TaskManager, Task, TaskStatus
 
 logger = logging.getLogger("QueueManager")
 
@@ -26,6 +29,7 @@ class QueueManager:
     
     管理多个 TaskManager（现在称为 TaskQueue），每个对应一个 YAML 文件。
     提供跨队列 GPU 冲突检测和统一的队列管理接口。
+    支持任务进程持久化：WebUI 重启后可恢复监控运行中的任务。
     """
     
     def __init__(self, workspace_dir: str = None):
@@ -40,16 +44,20 @@ class QueueManager:
         self.queues: Dict[str, TaskManager] = {}
         self.queue_configs: Dict[str, Dict[str, Any]] = {}
         
+        # 运行中任务的 PID 持久化
+        self.running_tasks: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+        
         # 确保工作空间目录存在
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         
-        # 加载工作空间配置
+        # 加载工作空间配置（包括恢复运行中任务）
         self._load_workspace()
         
         logger.info(f"队列管理器初始化完成，工作空间: {self.workspace_dir}")
     
     def _load_workspace(self):
-        """从 .workspace.json 加载队列配置"""
+        """从 .workspace.json 加载队列配置和运行中任务"""
         if not self.workspace_file.exists():
             logger.info("工作空间配置文件不存在，创建新配置")
             self._save_workspace()
@@ -58,6 +66,9 @@ class QueueManager:
         try:
             with open(self.workspace_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+            
+            # 加载运行中任务状态
+            self.running_tasks = data.get('running_tasks', {})
             
             for queue_config in data.get('queues', []):
                 queue_id = queue_config.get('id')
@@ -71,6 +82,24 @@ class QueueManager:
                         logger.error(f"加载队列失败 {yaml_path}: {e}")
                 else:
                     logger.warning(f"跳过无效队列配置: {queue_config}")
+            
+            # 恢复运行中任务的监控
+            self._restore_running_tasks()
+            
+            # 恢复之前正在运行的队列
+            for queue_config in data.get('queues', []):
+                queue_id = queue_config.get('id')
+                was_running = queue_config.get('queue_running', False)
+                
+                if queue_id in self.queues and was_running:
+                    queue = self.queues[queue_id]
+                    # 只有有待处理任务时才自动启动队列
+                    if queue.get_pending_tasks():
+                        try:
+                            queue.start_queue()
+                            logger.info(f"队列已自动恢复运行: {queue_config.get('name')}")
+                        except Exception as e:
+                            logger.error(f"恢复队列运行失败: {e}")
                     
         except Exception as e:
             logger.error(f"加载工作空间配置失败: {e}")
@@ -82,24 +111,172 @@ class QueueManager:
         yaml_dir = Path(yaml_path).parent
         history_file = yaml_dir / "logs" / ".history.json"
         
-        manager = TaskManager(yaml_path, str(history_file))
+        # 创建回调函数（闭包捕获 queue_id）
+        def on_task_started(task_id, pid, log_file, task_name, command):
+            self._on_task_started(queue_id, task_id, pid, log_file, task_name, command)
+        
+        def on_task_finished(task_id):
+            self._on_task_finished(task_id)
+        
+        manager = TaskManager(
+            yaml_path, 
+            str(history_file),
+            on_task_started=on_task_started,
+            on_task_finished=on_task_finished
+        )
         self.queues[queue_id] = manager
         self.queue_configs[queue_id] = config
     
     def _save_workspace(self):
-        """保存工作空间配置到 .workspace.json"""
+        """保存工作空间配置到 .workspace.json（包括运行中任务和队列状态）"""
+        # 更新队列配置中的运行状态
+        for queue_id, config in self.queue_configs.items():
+            if queue_id in self.queues:
+                config['queue_running'] = self.queues[queue_id].queue_running
+        
         data = {
-            "version": "1.0",
+            "version": "1.1",
             "updated_at": datetime.now().isoformat(),
-            "queues": list(self.queue_configs.values())
+            "queues": list(self.queue_configs.values()),
+            "running_tasks": self.running_tasks
         }
         
         try:
             with open(self.workspace_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            logger.info("工作空间配置已保存")
         except Exception as e:
             logger.error(f"保存工作空间配置失败: {e}")
+    
+    def _on_task_started(self, queue_id: str, task_id: str, pid: int, log_file: str, task_name: str, command: str):
+        """任务启动回调：持久化 PID 和命令"""
+        with self._lock:
+            self.running_tasks[task_id] = {
+                "queue_id": queue_id,
+                "pid": pid,
+                "log_file": log_file,
+                "task_name": task_name,
+                "command": command,
+                "start_time": datetime.now().isoformat()
+            }
+            self._save_workspace()
+        logger.info(f"任务 PID 已持久化: {task_name} (PID: {pid})")
+    
+    def _on_task_finished(self, task_id: str):
+        """任务完成回调：从持久化存储中移除 PID"""
+        with self._lock:
+            if task_id in self.running_tasks:
+                task_name = self.running_tasks[task_id].get('task_name', task_id)
+                del self.running_tasks[task_id]
+                self._save_workspace()
+                logger.info(f"任务 PID 已移除: {task_name}")
+    
+    def _restore_running_tasks(self):
+        """恢复运行中任务的监控"""
+        if not self.running_tasks:
+            return
+        
+        tasks_to_remove = []
+        
+        for task_id, task_info in self.running_tasks.items():
+            pid = task_info.get('pid')
+            queue_id = task_info.get('queue_id')
+            log_file = task_info.get('log_file')
+            task_name = task_info.get('task_name', task_id)
+            command = task_info.get('command', '(命令未保存)')
+            
+            # 检查进程是否仍在运行
+            if pid and self._is_process_running(pid):
+                logger.info(f"恢复任务监控: {task_name} (PID: {pid})")
+                
+                # 在对应队列中恢复任务
+                queue = self.queues.get(queue_id)
+                if queue:
+                    self._restore_task_in_queue(queue, task_id, pid, log_file, task_name, command)
+            else:
+                logger.info(f"任务已完成或进程不存在: {task_name} (PID: {pid})")
+                tasks_to_remove.append(task_id)
+        
+        # 移除已完成的任务
+        for task_id in tasks_to_remove:
+            del self.running_tasks[task_id]
+        
+        if tasks_to_remove:
+            self._save_workspace()
+    
+    def _is_process_running(self, pid: int) -> bool:
+        """检查进程是否仍在运行"""
+        try:
+            process = psutil.Process(pid)
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+    
+    def _restore_task_in_queue(self, queue: TaskManager, task_id: str, pid: int, log_file: str, task_name: str, command: str):
+        """在队列中恢复任务"""
+        import subprocess
+        
+        # 创建任务对象，使用原始命令
+        task = Task(
+            id=task_id,
+            name=task_name,
+            command=command,
+            status=TaskStatus.RUNNING,
+            log_file=log_file,
+            note="(WebUI 重启后恢复的任务)"
+        )
+        task.start_time = datetime.now()
+        
+        # 创建一个假的 process 对象用于监控
+        # 我们直接通过 PID 监控进程状态
+        task.process = None  # 不需要实际的 Popen 对象
+        
+        # 将任务添加到队列
+        queue.tasks[task_id] = task
+        
+        # 启动 PID 监控线程
+        monitor_thread = threading.Thread(
+            target=self._monitor_pid,
+            args=(queue, task, pid),
+            daemon=True
+        )
+        monitor_thread.start()
+    
+    def _monitor_pid(self, queue: TaskManager, task: Task, pid: int):
+        """通过 PID 监控进程状态"""
+        import time
+        
+        try:
+            process = psutil.Process(pid)
+            # 等待进程结束
+            while process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                time.sleep(1)
+            
+            # 获取返回码
+            return_code = process.wait()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return_code = -1
+        
+        # 更新任务状态
+        task.end_time = datetime.now()
+        
+        if return_code == 0:
+            task.status = TaskStatus.COMPLETED
+            queue.logger.info(f"任务完成: {task.name}")
+        else:
+            task.status = TaskStatus.FAILED
+            task.error_message = f"退出码: {return_code}"
+            queue.logger.error(f"任务失败: {task.name} ({task.error_message})")
+        
+        # 添加到历史
+        queue.history_manager.add(task.to_dict())
+        
+        # 从任务列表移除
+        with queue._lock:
+            if task.id in queue.tasks:
+                del queue.tasks[task.id]
+        
+        # 从持久化存储移除
+        self._on_task_finished(task.id)
     
     def _generate_queue_id(self) -> str:
         """生成队列 ID"""
