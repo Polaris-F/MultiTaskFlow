@@ -12,11 +12,22 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { TaskDialog } from './components/TaskDialog';
 import { QueueTabs } from './components/QueueTabs';
 import { AddQueueDialog } from './components/AddQueueDialog';
+import { LoginPage } from './components/LoginPage';
 import { type Task } from './api';
+
+// 认证状态类型
+interface AuthStatus {
+  authenticated: boolean;
+  auth_enabled: boolean;
+}
 
 function App() {
   const { refreshTasks, refreshHistory, refreshQueueStatus, setLogPanelOpen, setCurrentLogTask, runningTasks, pendingTasks, history } = useTaskStore();
   const { fetchQueues, queues, currentQueueId, fetchGlobalGpuUsage } = useQueueStore();
+
+  // 认证状态
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Default to 'main' to show main log on startup
   const [currentLogId, setCurrentLogId] = useState<string>('main');
@@ -27,8 +38,31 @@ function App() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isAddQueueDialogOpen, setAddQueueDialogOpen] = useState(false);
 
-  // Initial fetch and polling
+  // 检查认证状态
+  const checkAuth = async () => {
+    try {
+      const res = await fetch('/api/auth/status');
+      if (res.ok) {
+        const data = await res.json();
+        setAuthStatus(data);
+      }
+    } catch (e) {
+      // 网络错误，忽略
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // 首次加载时检查认证状态
   useEffect(() => {
+    checkAuth();
+  }, []);
+
+  // Initial fetch and polling (only when authenticated or auth not enabled)
+  useEffect(() => {
+    if (authLoading) return;
+    if (authStatus?.auth_enabled && !authStatus?.authenticated) return;
+
     // Fetch queues first
     fetchQueues();
     fetchGlobalGpuUsage();
@@ -47,20 +81,36 @@ function App() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [authLoading, authStatus]);
 
   // Refresh tasks when queue changes
   useEffect(() => {
     if (currentQueueId) {
-      // Reset log to main log when switching queues
-      setCurrentLogId('main');
-      setCurrentLogTask(null);
-
       refreshTasks();
       refreshHistory();
       refreshQueueStatus();
     }
   }, [currentQueueId]);
+
+  // 当有任务运行时，自动显示运行中任务的日志
+  useEffect(() => {
+    if (runningTasks.length > 0) {
+      // 有运行中的任务，显示第一个运行中任务的日志
+      const runningTaskId = runningTasks[0].id;
+      setCurrentLogId(runningTaskId);
+      setCurrentLogTask(runningTaskId);
+    } else if (currentLogId && currentLogId !== 'main') {
+      // 没有运行中的任务，但当前显示的是某个任务日志
+      // 检查该任务是否还存在
+      const taskExists = [...pendingTasks, ...history].some(t => t.id === currentLogId);
+      if (!taskExists) {
+        // 任务不存在了，回退到主日志
+        setCurrentLogId('main');
+        setCurrentLogTask(null);
+      }
+      // 如果任务存在（已完成/失败），保持显示该任务日志
+    }
+  }, [runningTasks, pendingTasks, history]);
 
   // Check if current queue has YAML loaded
   const hasQueue = queues.length > 0 && currentQueueId;
@@ -133,6 +183,35 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentLogId]);
+
+  // 加载中
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a]">
+        <div className="text-slate-400">
+          <svg className="w-8 h-8 animate-spin mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          加载中...
+        </div>
+      </div>
+    );
+  }
+
+  // 需要登录
+  if (authStatus && (authStatus.auth_enabled && !authStatus.authenticated) || (authStatus && !authStatus.auth_enabled)) {
+    // 如果未启用认证，显示设置密码页面
+    // 如果已启用但未认证，显示登录页面
+    if (!authStatus.auth_enabled || !authStatus.authenticated) {
+      return (
+        <LoginPage
+          onLogin={checkAuth}
+          authEnabled={authStatus.auth_enabled}
+        />
+      );
+    }
+  }
 
   return (
     <div className="h-screen flex flex-col bg-[#0a0f1a] text-slate-100">

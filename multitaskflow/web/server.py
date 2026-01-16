@@ -100,9 +100,11 @@ def create_app(config_path: str = None, workspace_dir: str = None) -> FastAPI:
     from .api import tasks as tasks_api
     from .api import execute as execute_api
     from .api import queues as queues_api
+    from .api import auth as auth_api
     from . import ws as ws_api
     
     # 注册 API 路由
+    app.include_router(auth_api.router, prefix="/api", tags=["auth"])
     app.include_router(tasks_api.router, prefix="/api", tags=["tasks"])
     app.include_router(execute_api.router, prefix="/api", tags=["execute"])
     app.include_router(queues_api.router, prefix="/api", tags=["queues"])
