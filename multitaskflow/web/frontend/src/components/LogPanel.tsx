@@ -252,8 +252,14 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
         });
     };
 
-    // Build task list for selector
-    const allTasks = [...runningTasks, ...pendingTasks, ...history.slice(0, 20)];
+    // Build task list for selector (去重)
+    const allTasksMap = new Map();
+    [...runningTasks, ...pendingTasks, ...history.slice(0, 20)].forEach(task => {
+        if (!allTasksMap.has(task.id)) {
+            allTasksMap.set(task.id, task);
+        }
+    });
+    const allTasks = Array.from(allTasksMap.values());
 
     return (
         <div className="w-full h-full flex flex-col bg-slate-800/50 rounded-lg overflow-hidden border-l border-slate-700">

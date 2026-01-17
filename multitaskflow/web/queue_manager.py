@@ -241,9 +241,75 @@ class QueueManager:
         )
         monitor_thread.start()
     
+    # ============ 日志分析配置 ============
+    
+    # 成功标记 - 日志中出现这些字符串表示任务成功
+    SUCCESS_MARKERS = [
+        "Results saved to",           # YOLO 训练完成
+        "[MTF:SUCCESS]",              # MultiTaskFlow 自定义成功标记
+        "Training complete",          # 通用训练完成
+        "训练完成",                    # 中文训练完成
+        "Successfully completed",     # 通用成功
+    ]
+    
+    # 失败标记 - 日志中出现这些字符串表示任务失败
+    FAILURE_MARKERS = [
+        "[MTF:FAILED]",               # MultiTaskFlow 自定义失败标记
+        "CUDA out of memory",         # GPU 内存不足
+        "RuntimeError:",              # Python 运行时错误
+        "OutOfMemoryError",           # 内存不足
+        "Traceback (most recent",     # Python 异常追踪
+    ]
+    
+    def _check_log_for_status(self, log_file: str) -> Optional[bool]:
+        """
+        检查日志文件判断任务状态
+        
+        Returns:
+            True: 成功（找到成功标记）
+            False: 失败（找到失败标记）
+            None: 无法确定
+        """
+        if not log_file:
+            return None
+        
+        log_path = Path(log_file)
+        if not log_path.exists():
+            return None
+        
+        try:
+            # 只读取最后 100KB 的日志（避免读取过大的文件）
+            file_size = log_path.stat().st_size
+            read_size = min(file_size, 100 * 1024)
+            
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                if file_size > read_size:
+                    f.seek(file_size - read_size)
+                content = f.read()
+            
+            # 先检查失败标记（失败优先）
+            for marker in self.FAILURE_MARKERS:
+                if marker in content:
+                    logger.debug(f"日志中发现失败标记: {marker}")
+                    return False
+            
+            # 再检查成功标记
+            for marker in self.SUCCESS_MARKERS:
+                if marker in content:
+                    logger.debug(f"日志中发现成功标记: {marker}")
+                    return True
+            
+            return None
+        except Exception as e:
+            logger.warning(f"读取日志文件失败: {e}")
+            return None
+    
     def _monitor_pid(self, queue: TaskManager, task: Task, pid: int):
-        """通过 PID 监控进程状态"""
+        """通过 PID 监控进程状态，结合日志分析判断任务结果"""
         import time
+        
+        return_code = None
+        process_ended = False
         
         try:
             process = psutil.Process(pid)
@@ -251,21 +317,59 @@ class QueueManager:
             while process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
                 time.sleep(1)
             
-            # 获取返回码
-            return_code = process.wait()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            process_ended = True
+            # 进程已结束，尝试获取返回码
+            try:
+                return_code = process.wait(timeout=0)
+            except psutil.TimeoutExpired:
+                pass
+                    
+        except psutil.NoSuchProcess:
+            # 进程不存在了
+            process_ended = True
+            return_code = None
+        except psutil.AccessDenied:
+            # 无权限访问进程
+            process_ended = True
+            return_code = -1
+        except Exception as e:
+            queue.logger.warning(f"监控进程 {pid} 时出错: {e}")
+            process_ended = True
             return_code = -1
         
         # 更新任务状态
         task.end_time = datetime.now()
         
+        # 智能判断任务状态
         if return_code == 0:
+            # 退出码为 0，认为成功
             task.status = TaskStatus.COMPLETED
             queue.logger.info(f"任务完成: {task.name}")
+        elif return_code is not None and return_code != 0:
+            # 有明确的非零退出码，检查日志确认是否真的失败
+            log_status = self._check_log_for_status(task.log_file)
+            if log_status is True:
+                # 日志显示成功
+                task.status = TaskStatus.COMPLETED
+                queue.logger.info(f"任务完成: {task.name} (日志显示成功)")
+            else:
+                task.status = TaskStatus.FAILED
+                task.error_message = f"退出码: {return_code}"
+                queue.logger.error(f"任务失败: {task.name} ({task.error_message})")
         else:
-            task.status = TaskStatus.FAILED
-            task.error_message = f"退出码: {return_code}"
-            queue.logger.error(f"任务失败: {task.name} ({task.error_message})")
+            # 退出码为 None，通过日志判断
+            log_status = self._check_log_for_status(task.log_file)
+            if log_status is True:
+                task.status = TaskStatus.COMPLETED
+                queue.logger.info(f"任务完成: {task.name} (根据日志判断)")
+            elif log_status is False:
+                task.status = TaskStatus.FAILED
+                task.error_message = "日志显示任务失败"
+                queue.logger.error(f"任务失败: {task.name} ({task.error_message})")
+            else:
+                # 日志也无法判断，假设成功（保守策略：进程正常结束）
+                task.status = TaskStatus.COMPLETED
+                queue.logger.info(f"任务完成: {task.name} (进程已结束)")
         
         # 添加到历史
         queue.history_manager.add(task.to_dict())

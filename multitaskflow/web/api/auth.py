@@ -4,10 +4,11 @@
 """
 认证模块
 
-提供简单的密码认证功能。
+提供简单的密码认证功能，支持会话持久化。
 """
 
 import os
+import json
 import secrets
 import hashlib
 from datetime import datetime, timedelta
@@ -15,22 +16,65 @@ from typing import Optional
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends, Request, Response
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
 
 router = APIRouter()
 
-# 会话存储（内存中）
-_sessions: dict[str, datetime] = {}
-
 # 会话过期时间（小时）
-SESSION_EXPIRE_HOURS = 24
+SESSION_EXPIRE_HOURS = 24 * 7  # 7 天
 
-# 密码文件路径
+# 配置目录
+def _get_config_dir() -> Path:
+    """获取配置目录"""
+    config_dir = Path.home() / ".multitaskflow"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
 def _get_password_file() -> Path:
     """获取密码文件路径"""
-    return Path.home() / ".multitaskflow" / "auth.txt"
+    return _get_config_dir() / "auth.txt"
+
+
+def _get_sessions_file() -> Path:
+    """获取会话文件路径"""
+    return _get_config_dir() / "sessions.json"
+
+
+# 会话存储（内存缓存 + 文件持久化）
+_sessions: dict[str, datetime] = {}
+_sessions_loaded = False
+
+
+def _load_sessions():
+    """从文件加载会话"""
+    global _sessions, _sessions_loaded
+    if _sessions_loaded:
+        return
+    
+    sessions_file = _get_sessions_file()
+    if sessions_file.exists():
+        try:
+            data = json.loads(sessions_file.read_text())
+            now = datetime.now()
+            for token, expire_str in data.items():
+                expire = datetime.fromisoformat(expire_str)
+                if expire > now:
+                    _sessions[token] = expire
+        except Exception:
+            pass  # 忽略加载错误
+    _sessions_loaded = True
+
+
+def _save_sessions():
+    """保存会话到文件"""
+    sessions_file = _get_sessions_file()
+    data = {token: expire.isoformat() for token, expire in _sessions.items()}
+    try:
+        sessions_file.write_text(json.dumps(data, indent=2))
+    except Exception:
+        pass  # 忽略保存错误
 
 
 def _hash_password(password: str) -> str:
@@ -68,25 +112,31 @@ def verify_password(password: str) -> bool:
 
 def create_session() -> str:
     """创建新会话"""
+    _load_sessions()
     token = secrets.token_urlsafe(32)
     _sessions[token] = datetime.now() + timedelta(hours=SESSION_EXPIRE_HOURS)
+    _save_sessions()
     return token
 
 
 def verify_session(token: str) -> bool:
     """验证会话"""
+    _load_sessions()
     if token not in _sessions:
         return False
     if datetime.now() > _sessions[token]:
         del _sessions[token]
+        _save_sessions()
         return False
     return True
 
 
 def clear_session(token: str):
     """清除会话"""
+    _load_sessions()
     if token in _sessions:
         del _sessions[token]
+        _save_sessions()
 
 
 # API 模型

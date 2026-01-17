@@ -7,16 +7,17 @@
 提供任务运行、停止等控制接口。
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from ..state import get_task_manager
+from .auth import require_auth
 
 
 router = APIRouter()
 
 
 @router.post("/tasks/{task_id}/run")
-async def run_task(task_id: str):
+async def run_task(task_id: str, _=Depends(require_auth)):
     """
     运行指定任务
     
@@ -39,7 +40,7 @@ async def run_task(task_id: str):
 
 
 @router.post("/tasks/{task_id}/stop")
-async def stop_task(task_id: str):
+async def stop_task(task_id: str, _=Depends(require_auth)):
     """停止指定任务"""
     manager = get_task_manager()
     
@@ -54,7 +55,7 @@ async def stop_task(task_id: str):
 
 
 @router.post("/stop-all")
-async def stop_all():
+async def stop_all(_=Depends(require_auth)):
     """停止所有运行中的任务"""
     manager = get_task_manager()
     if manager is None:
@@ -64,9 +65,9 @@ async def stop_all():
 
 
 @router.post("/start-queue")
-async def start_queue():
+async def start_queue(_=Depends(require_auth)):
     """开始自动队列执行（按顺序执行所有待执行任务）"""
-    from .state import get_queue_manager
+    from ..state import get_queue_manager
     manager = get_task_manager()
     
     if manager is None:
@@ -76,9 +77,9 @@ async def start_queue():
         return {"success": False, "message": "队列已在运行中"}
     
     pending = manager.get_pending_tasks()
-    if not pending:
-        return {"success": False, "message": "没有待执行的任务"}
+    running = manager.get_running_tasks()
     
+    # 允许启动队列，即使没有待执行任务（可能有运行中的任务，或后续会添加任务）
     manager.start_queue()
     
     # 保存队列状态
@@ -86,16 +87,27 @@ async def start_queue():
     if queue_manager:
         queue_manager._save_workspace()
     
-    return {
-        "success": True, 
-        "message": f"队列已启动，共 {len(pending)} 个任务"
-    }
+    if pending:
+        return {
+            "success": True, 
+            "message": f"队列已启动，共 {len(pending)} 个待执行任务"
+        }
+    elif running:
+        return {
+            "success": True, 
+            "message": f"队列已启动，当前有 {len(running)} 个运行中任务"
+        }
+    else:
+        return {
+            "success": True, 
+            "message": "队列已启动，等待添加任务"
+        }
 
 
 @router.post("/stop-queue")
-async def stop_queue():
+async def stop_queue(_=Depends(require_auth)):
     """停止队列自动执行（完成当前任务后停止）"""
-    from .state import get_queue_manager
+    from ..state import get_queue_manager
     manager = get_task_manager()
     if manager is None:
         return {"success": True, "message": "无队列运行"}
@@ -110,7 +122,7 @@ async def stop_queue():
 
 
 @router.get("/queue-status")
-async def queue_status():
+async def queue_status(_=Depends(require_auth)):
     """获取队列状态"""
     manager = get_task_manager()
     
@@ -131,7 +143,7 @@ async def queue_status():
 
 
 @router.get("/main-log")
-async def get_main_log(lines: int = 200):
+async def get_main_log(lines: int = 200, _=Depends(require_auth)):
     """获取主进程日志内容"""
     from pathlib import Path
     
@@ -178,7 +190,7 @@ async def get_main_log(lines: int = 200):
 
 
 @router.post("/reload")
-async def reload_tasks():
+async def reload_tasks(_=Depends(require_auth)):
     """重新加载配置文件（清空并重新加载）"""
     manager = get_task_manager()
     
@@ -204,7 +216,7 @@ async def reload_tasks():
 
 
 @router.get("/check-yaml")
-async def check_yaml():
+async def check_yaml(_=Depends(require_auth)):
     """
     检查 YAML 文件是否有新任务
     
@@ -240,12 +252,13 @@ async def check_yaml():
 
 
 @router.post("/load-new-tasks")
-async def load_new_tasks():
+async def load_new_tasks(_=Depends(require_auth)):
     """
     加载 YAML 中的新任务
     
     只加载格式正确的新任务，跳过已存在的和无效的任务。
     """
+    from ..state import get_queue_manager
     manager = get_task_manager()
     
     if manager is None:
@@ -258,6 +271,12 @@ async def load_new_tasks():
         }
     
     result = manager.load_new_tasks_from_yaml()
+    
+    # 保存状态到工作空间（持久化新加载的任务）
+    if result["loaded"] > 0:
+        queue_manager = get_queue_manager()
+        if queue_manager:
+            queue_manager._save_workspace()
     
     message_parts = []
     if result["loaded"] > 0:
@@ -277,7 +296,7 @@ async def load_new_tasks():
 
 
 @router.get("/logs/{task_id}")
-async def get_log_content(task_id: str, lines: int = 500):
+async def get_log_content(task_id: str, lines: int = 500, _=Depends(require_auth)):
     """
     获取任务日志内容
     

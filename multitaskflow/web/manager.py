@@ -615,6 +615,17 @@ class TaskManager:
         return_code = task.process.wait()
         task.end_time = datetime.now()
         
+        # 处理 None 退出码的情况（理论上不应该发生，但做防御性处理）
+        if return_code is None:
+            # 检查进程是否还在运行
+            if task.process.poll() is None:
+                # 进程还在运行，这不应该发生
+                self.logger.warning(f"任务 {task.name} wait() 返回 None 但进程仍在运行")
+                return_code = -1
+            else:
+                # 进程已结束但退出码为 None，假设正常完成
+                return_code = task.process.returncode if task.process.returncode is not None else 0
+        
         if return_code == 0:
             task.status = TaskStatus.COMPLETED
             self.logger.info(f"任务完成: {task.name}")

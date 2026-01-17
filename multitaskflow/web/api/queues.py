@@ -8,10 +8,11 @@
 """
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from ..state import get_queue_manager, set_current_queue, get_current_queue_id
+from .auth import require_auth
 
 
 router = APIRouter()
@@ -37,7 +38,7 @@ class QueueResponse(BaseModel):
 # ============ API 端点 ============
 
 @router.get("/queues")
-async def get_queues():
+async def get_queues(_=Depends(require_auth)):
     """获取所有队列"""
     manager = get_queue_manager()
     queues = manager.get_all_queues()
@@ -49,7 +50,7 @@ async def get_queues():
 
 
 @router.post("/queues")
-async def create_queue(queue: QueueCreate):
+async def create_queue(queue: QueueCreate, _=Depends(require_auth)):
     """添加新队列"""
     manager = get_queue_manager()
     
@@ -68,7 +69,7 @@ async def create_queue(queue: QueueCreate):
 
 
 @router.delete("/queues/{queue_id}")
-async def delete_queue(queue_id: str):
+async def delete_queue(queue_id: str, _=Depends(require_auth)):
     """移除队列（不删除文件）"""
     manager = get_queue_manager()
     
@@ -80,7 +81,7 @@ async def delete_queue(queue_id: str):
 
 
 @router.get("/queues/{queue_id}")
-async def get_queue(queue_id: str):
+async def get_queue(queue_id: str, _=Depends(require_auth)):
     """获取队列信息"""
     manager = get_queue_manager()
     
@@ -100,7 +101,7 @@ async def get_queue(queue_id: str):
 
 
 @router.post("/queues/{queue_id}/select")
-async def select_queue(queue_id: str):
+async def select_queue(queue_id: str, _=Depends(require_auth)):
     """切换当前活动队列"""
     manager = get_queue_manager()
     
@@ -113,7 +114,7 @@ async def select_queue(queue_id: str):
 
 
 @router.get("/global/gpu-usage")
-async def get_global_gpu_usage():
+async def get_global_gpu_usage(_=Depends(require_auth)):
     """获取跨队列 GPU 使用情况"""
     manager = get_queue_manager()
     usage = manager.get_global_gpu_usage()
@@ -121,7 +122,7 @@ async def get_global_gpu_usage():
 
 
 @router.get("/queues/{queue_id}/cross-conflict/{task_id}")
-async def check_cross_conflict(queue_id: str, task_id: str):
+async def check_cross_conflict(queue_id: str, task_id: str, _=Depends(require_auth)):
     """检查跨队列 GPU 冲突"""
     manager = get_queue_manager()
     

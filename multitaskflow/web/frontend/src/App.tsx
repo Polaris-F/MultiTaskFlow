@@ -199,18 +199,14 @@ function App() {
     );
   }
 
-  // 需要登录
-  if (authStatus && (authStatus.auth_enabled && !authStatus.authenticated) || (authStatus && !authStatus.auth_enabled)) {
-    // 如果未启用认证，显示设置密码页面
-    // 如果已启用但未认证，显示登录页面
-    if (!authStatus.auth_enabled || !authStatus.authenticated) {
-      return (
-        <LoginPage
-          onLogin={checkAuth}
-          authEnabled={authStatus.auth_enabled}
-        />
-      );
-    }
+  // 需要登录或设置密码
+  if (authStatus && (!authStatus.auth_enabled || !authStatus.authenticated)) {
+    return (
+      <LoginPage
+        onLogin={checkAuth}
+        authEnabled={authStatus.auth_enabled}
+      />
+    );
   }
 
   return (

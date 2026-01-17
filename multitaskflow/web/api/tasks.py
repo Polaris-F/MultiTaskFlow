@@ -8,10 +8,11 @@
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from ..state import get_task_manager
+from ..state import get_task_manager, get_queue_manager
+from .auth import require_auth
 
 
 router = APIRouter()
@@ -61,10 +62,19 @@ class TaskListResponse(BaseModel):
     running: List[TaskResponse]
 
 
+# ============ 辅助函数 ============
+
+def _save_state():
+    """保存工作空间状态"""
+    queue_manager = get_queue_manager()
+    if queue_manager:
+        queue_manager._save_workspace()
+
+
 # ============ API 端点 ============
 
 @router.get("/tasks", response_model=TaskListResponse)
-async def get_tasks():
+async def get_tasks(_=Depends(require_auth)):
     """获取所有任务"""
     manager = get_task_manager()
     
@@ -86,7 +96,7 @@ async def get_tasks():
 
 
 @router.post("/tasks", response_model=TaskResponse)
-async def create_task(task: TaskCreate):
+async def create_task(task: TaskCreate, _=Depends(require_auth)):
     """创建新任务"""
     manager = get_task_manager()
     
@@ -97,6 +107,10 @@ async def create_task(task: TaskCreate):
         raise HTTPException(status_code=400, detail="任务名称和命令不能为空")
     
     new_task = manager.add_task(task.name, task.command, task.note)
+    
+    # 持久化
+    _save_state()
+    
     result = new_task.to_dict()
     result["can_run"] = True
     result["conflict_message"] = None
@@ -104,7 +118,7 @@ async def create_task(task: TaskCreate):
 
 
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
-async def get_task(task_id: str):
+async def get_task(task_id: str, _=Depends(require_auth)):
     """获取单个任务"""
     manager = get_task_manager()
     task = manager.get_task(task_id)
@@ -120,7 +134,7 @@ async def get_task(task_id: str):
 
 
 @router.put("/tasks/{task_id}", response_model=TaskResponse)
-async def update_task(task_id: str, task: TaskUpdate):
+async def update_task(task_id: str, task: TaskUpdate, _=Depends(require_auth)):
     """更新任务"""
     manager = get_task_manager()
     
@@ -128,6 +142,9 @@ async def update_task(task_id: str, task: TaskUpdate):
         updated = manager.update_task(task_id, task.name, task.command, task.note)
         if not updated:
             raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 持久化
+        _save_state()
         
         result = updated.to_dict()
         conflict = manager.check_gpu_conflict(task_id)
@@ -139,7 +156,7 @@ async def update_task(task_id: str, task: TaskUpdate):
 
 
 @router.delete("/tasks/{task_id}")
-async def delete_task(task_id: str):
+async def delete_task(task_id: str, _=Depends(require_auth)):
     """删除任务"""
     manager = get_task_manager()
     
@@ -147,13 +164,17 @@ async def delete_task(task_id: str):
         success = manager.delete_task(task_id)
         if not success:
             raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 持久化
+        _save_state()
+        
         return {"success": True, "message": "任务已删除"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/tasks/reorder")
-async def reorder_tasks(reorder: TaskReorder):
+async def reorder_tasks(reorder: TaskReorder, _=Depends(require_auth)):
     """重排任务顺序"""
     manager = get_task_manager()
     
@@ -161,11 +182,14 @@ async def reorder_tasks(reorder: TaskReorder):
     if not success:
         raise HTTPException(status_code=400, detail="无效的任务顺序")
     
+    # 持久化
+    _save_state()
+    
     return {"success": True, "message": "任务顺序已更新"}
 
 
 @router.get("/history")
-async def get_history(limit: int = 50):
+async def get_history(limit: int = 50, _=Depends(require_auth)):
     """获取执行历史"""
     manager = get_task_manager()
     
@@ -178,17 +202,21 @@ async def get_history(limit: int = 50):
 
 
 @router.delete("/history")
-async def clear_history():
+async def clear_history(_=Depends(require_auth)):
     """清空执行历史"""
     manager = get_task_manager()
     if manager is None:
         return {"success": True, "message": "无历史记录"}
     manager.clear_history()
+    
+    # 持久化
+    _save_state()
+    
     return {"success": True, "message": "历史已清空"}
 
 
 @router.get("/status")
-async def get_status():
+async def get_status(_=Depends(require_auth)):
     """获取当前状态"""
     manager = get_task_manager()
     if manager is None:
