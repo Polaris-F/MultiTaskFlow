@@ -33,6 +33,9 @@ function App() {
   const [currentLogId, setCurrentLogId] = useState<string>('main');
   const [filter, setFilter] = useState<FilterType>('all');
 
+  // 用户是否手动选择了日志（防止自动切换覆盖用户选择）
+  const [userSelectedLog, setUserSelectedLog] = useState(false);
+
   // Dialog states
   const [isTaskDialogOpen, setTaskDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -93,12 +96,29 @@ function App() {
   }, [currentQueueId]);
 
   // 当有任务运行时，自动显示运行中任务的日志
+  // 但如果用户手动选择了其他日志，则不覆盖
   useEffect(() => {
+    if (userSelectedLog) {
+      // 用户手动选择了日志，不自动切换
+      // 但如果选择的任务不存在了，重置
+      if (currentLogId && currentLogId !== 'main') {
+        const taskExists = [...runningTasks, ...pendingTasks, ...history].some(t => t.id === currentLogId);
+        if (!taskExists) {
+          setCurrentLogId('main');
+          setCurrentLogTask(null);
+          setUserSelectedLog(false);
+        }
+      }
+      return;
+    }
+
     if (runningTasks.length > 0) {
       // 有运行中的任务，显示第一个运行中任务的日志
       const runningTaskId = runningTasks[0].id;
-      setCurrentLogId(runningTaskId);
-      setCurrentLogTask(runningTaskId);
+      if (currentLogId !== runningTaskId) {
+        setCurrentLogId(runningTaskId);
+        setCurrentLogTask(runningTaskId);
+      }
     } else if (currentLogId && currentLogId !== 'main') {
       // 没有运行中的任务，但当前显示的是某个任务日志
       // 检查该任务是否还存在
@@ -108,9 +128,8 @@ function App() {
         setCurrentLogId('main');
         setCurrentLogTask(null);
       }
-      // 如果任务存在（已完成/失败），保持显示该任务日志
     }
-  }, [runningTasks, pendingTasks, history]);
+  }, [runningTasks, pendingTasks, history, userSelectedLog, currentLogId]);
 
   // Check if current queue has YAML loaded
   const hasQueue = queues.length > 0 && currentQueueId;
@@ -130,11 +149,13 @@ function App() {
     setCurrentLogId(taskId);
     setCurrentLogTask(taskId);
     setLogPanelOpen(true);
+    setUserSelectedLog(true);  // 标记为用户手动选择
   };
 
   // Handle log selection from dropdown
   const handleSelectLog = (logId: string) => {
     setCurrentLogId(logId);
+    setUserSelectedLog(true);  // 标记为用户手动选择
     if (logId !== 'main') {
       setCurrentLogTask(logId);
     } else {

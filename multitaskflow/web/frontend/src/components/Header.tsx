@@ -15,9 +15,12 @@ export function Header() {
 
     return (
         <header className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                🚀 MultiTaskFlow
-            </h1>
+            <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                    🚀 MultiTaskFlow
+                </h1>
+                <span className="text-xs text-slate-500">v1.2.0</span>
+            </div>
             <div className="flex items-center gap-3">
                 <span
                     className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isActive

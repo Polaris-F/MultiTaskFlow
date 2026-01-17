@@ -14,7 +14,7 @@ export function XTerminal({ content }: XTerminalProps) {
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
-    const lastContentLengthRef = useRef(0);
+    const prevContentRef = useRef('');
 
     // 初始化终端
     useEffect(() => {
@@ -105,15 +105,21 @@ export function XTerminal({ content }: XTerminalProps) {
         const terminal = xtermRef.current;
         if (!terminal) return;
 
-        if (content.length > lastContentLengthRef.current) {
-            const newContent = content.slice(lastContentLengthRef.current);
+        const prevContent = prevContentRef.current;
+
+        // 检查是否是追加（新内容以旧内容开头）
+        if (content.length > prevContent.length && content.startsWith(prevContent)) {
+            // 只追加新增部分
+            const newContent = content.slice(prevContent.length);
             terminal.write(addLeftMargin(newContent));
-            lastContentLengthRef.current = content.length;
-        } else if (content.length < lastContentLengthRef.current) {
+        } else if (content !== prevContent) {
+            // 内容完全变化，清空后重写
             terminal.clear();
             terminal.write(addLeftMargin(content));
-            lastContentLengthRef.current = content.length;
         }
+        // else: 内容相同，无需操作
+
+        prevContentRef.current = content;
     }, [content]);
 
     return (

@@ -121,6 +121,9 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
     useEffect(() => {
         if (!taskId) return;
 
+        // 用于取消异步操作的标记
+        let cancelled = false;
+
         // Close existing WebSocket
         if (wsRef.current) {
             wsRef.current.close();
@@ -139,8 +142,10 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
         if (isMainLog) {
             // Load main log with polling
             const loadMainLog = async () => {
+                if (cancelled) return;
                 try {
                     const data = await api.getMainLog();
+                    if (cancelled) return;  // 检查是否已取消
                     if (data.success) {
                         setLogContent(data.content || '日志为空');
                         setLogPath(data.log_file || '');
@@ -148,6 +153,7 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
                         setLogContent(data.detail || '加载失败');
                     }
                 } catch (e: any) {
+                    if (cancelled) return;
                     setLogContent(`加载失败: ${e.message}`);
                 }
             };
@@ -157,6 +163,7 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
             pollRef.current = window.setInterval(loadMainLog, 3000);
 
             return () => {
+                cancelled = true;
                 if (pollRef.current) {
                     clearInterval(pollRef.current);
                     pollRef.current = null;
@@ -172,11 +179,16 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
             let wsConnected = false;
 
             ws.onopen = () => {
+                if (cancelled) {
+                    ws.close();
+                    return;
+                }
                 wsConnected = true;
                 setLogContent('');
             };
 
             ws.onmessage = (event) => {
+                if (cancelled) return;
                 const data = JSON.parse(event.data);
                 if (data.type === 'init') {
                     // 初始化消息包含日志文件路径
@@ -195,6 +207,7 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
             };
 
             ws.onerror = () => {
+                if (cancelled) return;
                 if (!wsConnected) {
                     setLogContent('WebSocket 连接失败');
                 }
@@ -205,6 +218,7 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
             };
 
             return () => {
+                cancelled = true;
                 if (wsRef.current) {
                     wsRef.current.close();
                     wsRef.current = null;
@@ -215,6 +229,7 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
             const loadTaskLog = async () => {
                 try {
                     const data = await api.getTaskLog(taskId);
+                    if (cancelled) return;  // 关键：检查是否已取消
                     if (data.success) {
                         setLogContent(data.content || '日志为空');
                         setLogPath(data.log_file || '');
@@ -222,10 +237,15 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
                         setLogContent(data.detail || '加载失败');
                     }
                 } catch (e: any) {
+                    if (cancelled) return;
                     setLogContent(`加载失败: ${e.message}`);
                 }
             };
             loadTaskLog();
+
+            return () => {
+                cancelled = true;
+            };
         }
     }, [taskId, isMainLog, isRunning, setLogContent, appendLogContent]);
 
