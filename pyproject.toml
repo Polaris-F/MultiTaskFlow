@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multitaskflow"
-version = "0.1.5"
-description = "一个用于管理和监控多个任务执行的Python工具"
+version = "1.0.0"
+description = "一个用于管理和监控多个任务执行的Python工具，支持CLI和Web UI"
 readme = "README.md"
 authors = [
     {name = "Polaris", email = "polaris0532@outlook.com"}
 ]
 license = "MIT"
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
@@ -30,11 +30,15 @@ dependencies = [
     "psutil>=5.8.0",
     "python-dotenv>=0.19.0",
     "requests>=2.25.0",
-    "build>=0.10.0", # 添加构建工具依赖
 ]
 
 [project.optional-dependencies]
 color = ["colorama>=0.4.0"]
+web = [
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "watchdog>=3.0.0",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/Polaris-F/MultiTaskFlow"
@@ -46,4 +50,7 @@ color = ["colorama>=0.4.0"]
 taskflow = "multitaskflow.task_flow:main"
 
 [tool.setuptools]
-packages = ["multitaskflow"]
+packages = ["multitaskflow", "multitaskflow.web", "multitaskflow.web.api"]
+
+[tool.setuptools.package-data]
+"multitaskflow.web" = ["static/**/*", "static/dist/**/*"]

@@ -1,36 +1,30 @@
 # MultiTaskFlow 任务流配置示例
 # 此文件定义了一系列用于演示的模拟任务
-# 任务将依次执行，每个任务完成后才会开始下一个
 
 # 模拟深度学习训练任务
 - name: "数据预处理"
-  command: "python examples/scripts/data_preprocess.py --dataset coco --output-dir data/processed"
+  command: "python scripts/data_preprocess.py --dataset coco --output-dir data/processed"
   status: "pending"
-  # silent: false  # 默认会发送消息通知
 
 - name: "模型训练-阶段1"
-  command: "python examples/scripts/train_model.py --model yolov8 --epochs 5 --batch-size 32 --dataset data/processed"
+  command: "python scripts/train_model.py --model yolov8 --epochs 5 --batch-size 32 --dataset data/processed"
   status: "pending"
-  silent: true  # 静默模式，不发送消息通知
+  silent: true
 
 - name: "模型评估-阶段1"
-  command: "python examples/scripts/evaluate_model.py --model-path checkpoints/yolov8_epoch_5.pt --dataset data/val"
+  command: "python scripts/evaluate_model.py --model-path checkpoints/yolov8_epoch_5.pt --dataset data/val"
   status: "pending"
-  # silent: false  # 默认会发送消息通知
 
-# 跳过的任务示例 - 临时禁用
+# 跳过的任务示例
 - name: "模型训练-阶段2（暂时跳过）"
-  command: "python examples/scripts/train_model.py --model yolov8 --epochs 5 --batch-size 16 --resume checkpoints/yolov8_epoch_5.pt"
-  status: "skipped"  # 设置为 skipped，此任务不会执行
-  # 当需要恢复执行时，将 status 改回 pending
+  command: "python scripts/train_model.py --model yolov8 --epochs 5 --batch-size 16 --resume checkpoints/yolov8_epoch_5.pt"
+  status: "skipped"
 
 - name: "模型评估-阶段2"
-  command: "python examples/scripts/evaluate_model.py --model-path checkpoints/yolov8_epoch_5.pt --dataset data/val"
+  command: "python scripts/evaluate_model.py --model-path checkpoints/yolov8_epoch_5.pt --dataset data/val"
   status: "pending"
-  # silent: false  # 默认会发送消息通知
 
-# 非Python任务示例
+# 非Python任务示例（Windows 使用 PowerShell）
 - name: "数据归档"
-  command: "bash examples/scripts/archive_data.sh checkpoints/yolov8_epoch_5.pt results/"
-  status: "pending" 
-  # silent: false  # 默认会发送消息通知 
+  command: "powershell -Command \"Write-Host 'Archiving data...'; Start-Sleep -Seconds 2; Write-Host 'Done!'\""
+  status: "pending"

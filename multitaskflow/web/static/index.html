@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MultiTaskFlow</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- 头部 -->
+        <header class="header">
+            <h1>🚀 MultiTaskFlow</h1>
+            <div class="header-controls">
+                <span id="queue-status" class="status-badge">空闲</span>
+            </div>
+        </header>
+
+        <!-- 工具栏 -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <button id="btn-start-queue" class="btn btn-success">▶️ 开始队列</button>
+                <button id="btn-stop-queue" class="btn btn-warning" style="display:none;">⏸️ 停止队列</button>
+                <button id="btn-check-yaml" class="btn btn-primary">📥 检查新任务</button>
+            </div>
+            <div class="toolbar-right">
+                <button id="btn-add-task" class="btn btn-secondary">+ 添加任务</button>
+                <button id="btn-reload" class="btn btn-secondary">🔄 重新加载</button>
+                <button id="btn-stop-all" class="btn btn-danger">⏹️ 全部停止</button>
+                <button id="btn-clear-history" class="btn btn-secondary btn-sm">🗑️ 清空历史</button>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content" id="main-content">
+            <!-- 任务表格 -->
+            <div class="task-panel" id="task-panel">
+                <div class="task-table-container">
+                    <table class="task-table" id="task-table">
+                        <thead>
+                            <tr>
+                                <th class="col-order resizable" data-col="order">#</th>
+                                <th class="col-status resizable" data-col="status">状态</th>
+                                <th class="col-name resizable" data-col="name">名称</th>
+                                <th class="col-command resizable" data-col="command">命令</th>
+                                <th class="col-duration resizable" data-col="duration">耗时</th>
+                                <th class="col-actions" data-col="actions">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="task-table-body">
+                        </tbody>
+                    </table>
+                    <div id="no-tasks" class="no-tasks" style="display:none;">
+                        暂无任务
+                    </div>
+                </div>
+            </div>
+
+            <!-- 可拖拽分隔条（默认隐藏） -->
+            <div class="resizer hidden" id="resizer"></div>
+
+            <!-- 日志面板（默认隐藏） -->
+            <div class="log-panel hidden" id="log-panel">
+                <div class="log-header">
+                    <span id="log-title">📜 日志</span>
+                    <div class="log-actions">
+                        <button id="btn-copy-win" class="btn btn-sm btn-secondary" style="display:none;">🪟</button>
+                        <button id="btn-copy-linux" class="btn btn-sm btn-secondary" style="display:none;">🐧</button>
+                        <button id="btn-close-log" class="btn btn-sm btn-secondary">✕</button>
+                    </div>
+                </div>
+                <div id="log-file-path" class="log-file-info" style="display:none;"></div>
+                <div id="log-content" class="log-content">
+                    <p class="log-placeholder">加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加/编辑任务弹窗 -->
+    <div id="task-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">添加任务</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <form id="task-form">
+                <input type="hidden" id="task-id">
+                <div class="form-group">
+                    <label for="task-name">任务名称</label>
+                    <input type="text" id="task-name" required placeholder="例如：训练 ResNet50">
+                </div>
+                <div class="form-group">
+                    <label for="task-command">执行命令</label>
+                    <textarea id="task-command" required rows="4"
+                        placeholder="例如：CUDA_VISIBLE_DEVICES=0,1 python train.py --epochs 100"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 状态提示 -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

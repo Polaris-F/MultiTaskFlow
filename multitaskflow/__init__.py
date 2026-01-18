@@ -16,7 +16,7 @@ MultiTaskFlow - 多任务流管理工具
 from .task_flow import TaskFlow, Task
 from .process_monitor import ProcessMonitor, Msg_push
 
-__version__ = '0.1.5'
+__version__ = '1.0.0'
 __author__ = 'LHF'
 
 __all__ = [
