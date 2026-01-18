@@ -957,6 +957,12 @@ def main():
         if len(sys.argv) <= 1 or sys.argv[1] in ['-h', '--help']:
             print_help_message()
             sys.exit(0)
+        
+        # 检查是否是 web 子命令
+        if sys.argv[1] == 'web':
+            # 启动 Web UI
+            run_web_server(sys.argv[2:])
+            sys.exit(0)
             
         # 有参数但不是帮助参数，视为配置文件路径
         config_path = sys.argv[1]
@@ -982,29 +988,94 @@ def main():
             if 'manager_thread' in locals() and manager_thread.is_alive():
                 manager_thread.join()
 
+
+def run_web_server(args: list):
+    """
+    启动 Web UI 服务器
+    
+    Args:
+        args: 命令行参数列表
+    """
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        prog='taskflow web',
+        description='启动 MultiTaskFlow Web UI'
+    )
+    parser.add_argument('config', nargs='?', help='任务配置文件路径（可选）')
+    parser.add_argument('--workspace', '-w', help='工作空间目录')
+    parser.add_argument('--host', default='0.0.0.0', help='服务器地址 (默认: 0.0.0.0)')
+    parser.add_argument('--port', '-p', type=int, default=8080, help='服务器端口 (默认: 8080)')
+    parser.add_argument('--reload', '-r', action='store_true', help='启用热重载（开发模式）')
+    
+    parsed = parser.parse_args(args)
+    
+    # 检查是否安装了 web 依赖
+    try:
+        from .web.server import run_server
+    except ImportError as e:
+        print("\033[1;31m错误：未安装 Web UI 依赖！\033[0m")
+        print("请运行以下命令安装：")
+        print("  pip install multitaskflow[web]")
+        print(f"\n详细错误: {e}")
+        sys.exit(1)
+    
+    # 确定工作空间
+    workspace = parsed.workspace
+    config = parsed.config
+    
+    if not config and not workspace:
+        # 无参数时使用当前目录
+        workspace = str(os.getcwd())
+    
+    # 启动服务
+    run_server(
+        config_path=config,
+        workspace_dir=workspace,
+        host=parsed.host,
+        port=parsed.port,
+        reload=parsed.reload
+    )
+
 def print_help_message():
     """打印帮助信息"""
     print("\n\033[1;36m=== MultiTaskFlow 使用帮助 ===\033[0m")
-    print("\033[1m用法:\033[0m python MultiTaskFlow.py <配置文件路径>")
+    print("\033[1m用法:\033[0m")
+    print("  taskflow <配置文件路径>           # CLI 模式：顺序执行任务")
+    print("  taskflow web [选项]               # Web 模式：启动可视化管理界面")
     print("\n\033[1m参数:\033[0m")
     print("  <配置文件路径>  YAML格式的任务配置文件路径")
     print("  -h, --help     显示此帮助信息并退出")
     
-    print("\n\033[1m命令行使用示例:\033[0m")
-    print("  # 使用python：配置文件启动任务流")
-    print("  python MultiTaskFlow.py tasks.yaml")
+    print("\n\033[1;33m=== Web UI 子命令 ===\033[0m")
+    print("\033[1m用法:\033[0m taskflow web [配置文件] [选项]")
+    print("\n\033[1mWeb 选项:\033[0m")
+    print("  [配置文件]         可选，任务配置文件路径")
+    print("  -w, --workspace    工作空间目录")
+    print("  -p, --port PORT    服务器端口 (默认: 8080)")
+    print("  --host HOST        服务器地址 (默认: 0.0.0.0)")
+    print("  -r, --reload       启用热重载（开发模式）")
+    
+    print("\n\033[1mWeb UI 示例:\033[0m")
+    print("  # 使用当前目录作为工作空间")
+    print("  taskflow web")
     print("")
-    print("  # 使用python：后台运行并记录日志")
-    print("  nohup python MultiTaskFlow.py my_tasks.yaml > taskflow.log 2>&1 &")
+    print("  # 加载指定 YAML 文件")
+    print("  taskflow web tasks.yaml")
     print("")
-    print("  # 使用脚本启动")
-    print("  bash start_taskflow.sh")
+    print("  # 指定端口")
+    print("  taskflow web --port 9000")
     print("")
-    print("  # 使用脚本停止")
-    print("  bash stop_taskflow.sh")
+    print("  # 指定工作空间目录")
+    print("  taskflow web -w /path/to/workspace")
+    
+    print("\n\033[1;33m=== CLI 模式 ===\033[0m")
+    print("\033[1m命令行使用示例:\033[0m")
+    print("  # 使用配置文件启动任务流")
+    print("  taskflow tasks.yaml")
     print("")
-    print("  # 使用shell命令启动")
-    print("  taskflow my_tasks.yaml")
+    print("  # 后台运行并记录日志")
+    print("  nohup taskflow my_tasks.yaml > taskflow.log 2>&1 &")
     
     print("\n\033[1m配置文件格式示例:\033[0m")
     print("""# 任务流配置示例
@@ -1022,8 +1093,10 @@ def print_help_message():
     
     print("\n\033[1m环境变量配置:\033[0m")
     print("  可在当前目录创建 .env 文件，配置以下环境变量:")
-    print("  PUSH_TOKEN    - 消息推送令牌 (用于任务完成通知)")
-    print("  PUSH_CHANNEL  - 推送渠道 (TODO)")
+    print("  MSG_PUSH_TOKEN  - 消息推送令牌 (用于任务完成通知)")
+    
+    print("\n\033[1m安装 Web UI 依赖:\033[0m")
+    print("  pip install multitaskflow[web]")
     
     print("\n\033[1m更多信息:\033[0m")
     print("请访问 GitHub 项目页面查看详细文档：")

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
 
 export function SettingsPanel() {
@@ -18,17 +19,77 @@ export function SettingsPanel() {
         setCanHideNote,
     } = useSettingsStore();
 
+    // 通知设置状态
+    const [pushplusToken, setPushplusToken] = useState('');
+    const [hasEnvToken, setHasEnvToken] = useState(false);
+    const [notificationSaving, setNotificationSaving] = useState(false);
+    const [testSending, setTestSending] = useState(false);
+    const [notificationMessage, setNotificationMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    // 加载通知设置
+    useEffect(() => {
+        if (isSettingsOpen) {
+            fetch('/api/settings/notification')
+                .then(res => res.json())
+                .then(data => {
+                    setPushplusToken(data.pushplus_token || '');
+                    setHasEnvToken(data.has_env_token || false);
+                })
+                .catch(() => { });
+        }
+    }, [isSettingsOpen]);
+
+    // 保存通知设置
+    const saveNotificationSettings = async () => {
+        setNotificationSaving(true);
+        setNotificationMessage(null);
+        try {
+            const res = await fetch('/api/settings/notification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pushplus_token: pushplusToken })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setNotificationMessage({ type: 'success', text: '设置已保存' });
+            } else {
+                setNotificationMessage({ type: 'error', text: data.message || '保存失败' });
+            }
+        } catch (e) {
+            setNotificationMessage({ type: 'error', text: '保存失败' });
+        }
+        setNotificationSaving(false);
+    };
+
+    // 发送测试通知
+    const sendTestNotification = async () => {
+        setTestSending(true);
+        setNotificationMessage(null);
+        try {
+            const res = await fetch('/api/settings/notification/test', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                setNotificationMessage({ type: 'success', text: '测试通知已发送' });
+            } else {
+                setNotificationMessage({ type: 'error', text: data.message || '发送失败' });
+            }
+        } catch (e) {
+            setNotificationMessage({ type: 'error', text: '发送失败' });
+        }
+        setTestSending(false);
+    };
+
     if (!isSettingsOpen) return null;
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSettingsOpen(false)}>
             <div
-                className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden border border-slate-700"
+                className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden border border-slate-700 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
-                    <h2 className="text-lg font-semibold text-slate-100">⚙️ 页面设置</h2>
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700 sticky top-0 bg-slate-800">
+                    <h2 className="text-lg font-semibold text-slate-100">⚙️ 设置</h2>
                     <button
                         onClick={() => setSettingsOpen(false)}
                         className="p-1.5 hover:bg-slate-700 rounded-lg transition-colors"
@@ -41,8 +102,63 @@ export function SettingsPanel() {
 
                 {/* Content */}
                 <div className="p-5 space-y-6">
-                    {/* Task Name Min Width */}
+                    {/* 通知设置 */}
                     <div className="space-y-3">
+                        <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                            📱 消息通知
+                        </h3>
+                        <p className="text-xs text-slate-500">任务完成或失败时推送通知到微信</p>
+
+                        {hasEnvToken && (
+                            <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-400">
+                                ✓ 已检测到环境变量 MSG_PUSH_TOKEN
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <label className="text-xs text-slate-400">PushPlus Token（优先于环境变量）</label>
+                            <input
+                                type="password"
+                                value={pushplusToken}
+                                onChange={(e) => setPushplusToken(e.target.value)}
+                                placeholder="留空则使用环境变量"
+                                className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                            />
+                            <p className="text-xs text-slate-500">
+                                获取 Token: <a href="https://www.pushplus.plus" target="_blank" rel="noopener" className="text-blue-400 hover:underline">pushplus.plus</a>
+                            </p>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={saveNotificationSettings}
+                                disabled={notificationSaving}
+                                className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white text-sm rounded-lg transition-colors"
+                            >
+                                {notificationSaving ? '保存中...' : '保存设置'}
+                            </button>
+                            <button
+                                onClick={sendTestNotification}
+                                disabled={testSending}
+                                className="px-3 py-2 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 text-white text-sm rounded-lg transition-colors"
+                            >
+                                {testSending ? '发送中...' : '发送测试'}
+                            </button>
+                        </div>
+
+                        {notificationMessage && (
+                            <div className={`p-2 rounded-lg text-xs ${notificationMessage.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                {notificationMessage.text}
+                            </div>
+                        )}
+                    </div>
+
+                    <hr className="border-slate-700" />
+
+                    {/* 页面设置 */}
+                    <div className="space-y-3">
+                        <h3 className="text-sm font-semibold text-slate-200">📐 页面布局</h3>
+
                         <div className="flex items-center justify-between">
                             <label className="text-sm font-medium text-slate-200">任务名称最小宽度</label>
                             <span className="text-sm text-blue-400 font-mono">{taskNameMinWidth}%</span>
@@ -55,7 +171,6 @@ export function SettingsPanel() {
                             onChange={(e) => setTaskNameMinWidth(Number(e.target.value))}
                             className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
-                        <p className="text-xs text-slate-500">任务名称列的最小宽度百分比，此列永不隐藏</p>
                     </div>
 
                     <hr className="border-slate-700" />
@@ -125,18 +240,11 @@ export function SettingsPanel() {
                             </div>
                         </div>
                     )}
-
-                    {/* Always visible columns info */}
-                    <div className="p-3 bg-slate-900/50 rounded-lg">
-                        <p className="text-xs text-slate-400">
-                            <span className="text-emerald-400">永不隐藏：</span> 序号、状态、名称
-                        </p>
-                    </div>
                 </div>
 
                 {/* Footer */}
                 <div className="px-5 py-4 border-t border-slate-700 bg-slate-900/30">
-                    <p className="text-xs text-slate-500 text-center">设置会自动保存到浏览器</p>
+                    <p className="text-xs text-slate-500 text-center">页面设置保存到浏览器，通知设置保存到工作区</p>
                 </div>
             </div>
         </div>

@@ -13,7 +13,7 @@ import { TaskDialog } from './components/TaskDialog';
 import { QueueTabs } from './components/QueueTabs';
 import { AddQueueDialog } from './components/AddQueueDialog';
 import { LoginPage } from './components/LoginPage';
-import { type Task } from './api';
+
 
 // 认证状态类型
 interface AuthStatus {
@@ -38,7 +38,6 @@ function App() {
 
   // Dialog states
   const [isTaskDialogOpen, setTaskDialogOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isAddQueueDialogOpen, setAddQueueDialogOpen] = useState(false);
 
   // 检查认证状态
@@ -171,18 +170,11 @@ function App() {
 
   // Task dialog handlers
   const handleAddTask = () => {
-    setEditingTask(null);
-    setTaskDialogOpen(true);
-  };
-
-  const handleEditTask = (task: Task) => {
-    setEditingTask(task);
     setTaskDialogOpen(true);
   };
 
   const handleCloseTaskDialog = () => {
     setTaskDialogOpen(false);
-    setEditingTask(null);
   };
 
   // Queue dialog handlers
@@ -250,7 +242,7 @@ function App() {
             </div>
 
             <ResizablePanels
-              leftPanel={<TaskTable onViewLog={handleViewLog} onEditTask={handleEditTask} filter={filter} />}
+              leftPanel={<TaskTable onViewLog={handleViewLog} filter={filter} />}
               rightPanel={currentLogId ? <LogPanel taskId={currentLogId} onClose={handleCloseLog} onSelectLog={handleSelectLog} /> : null}
               defaultLeftWidth={50}
               minLeftWidth={25}
@@ -280,7 +272,6 @@ function App() {
       <TaskDialog
         isOpen={isTaskDialogOpen}
         onClose={handleCloseTaskDialog}
-        editTask={editingTask}
       />
       <AddQueueDialog
         isOpen={isAddQueueDialogOpen}

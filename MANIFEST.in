@@ -1,0 +1,26 @@
+# Include README and license
+include README.md
+include LICENSE
+include CHANGELOG.md
+
+# Include requirements
+include requirements.txt
+
+# Include example files
+recursive-include examples *.yaml *.yml
+
+# Include web static files (built frontend)
+recursive-include multitaskflow/web/static *
+graft multitaskflow/web/static/dist
+
+# Exclude development files
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude .git*
+exclude .env
+exclude .env.example
+
+# Exclude frontend source (only include built files)
+prune multitaskflow/web/frontend

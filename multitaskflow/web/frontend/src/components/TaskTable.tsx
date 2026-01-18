@@ -188,7 +188,7 @@ function ResizableHeader({ label, width, onResizeStart, className = '', isLast =
     );
 }
 
-export function TaskTable({ onViewLog, onEditTask, filter }: { onViewLog: (id: string) => void; onEditTask: (task: Task) => void; filter: FilterType }) {
+export function TaskTable({ onViewLog, filter }: { onViewLog: (id: string) => void; filter: FilterType }) {
     const tableRef = useRef<HTMLTableElement>(null);
 
     // 详情对话框状态
@@ -328,7 +328,6 @@ export function TaskTable({ onViewLog, onEditTask, filter }: { onViewLog: (id: s
                 isOpen={showDetail}
                 onClose={() => setShowDetail(false)}
                 onViewLog={onViewLog}
-                onEdit={onEditTask}
             />
         </div>
     );

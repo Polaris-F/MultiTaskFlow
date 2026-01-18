@@ -371,6 +371,9 @@ class QueueManager:
                 task.status = TaskStatus.COMPLETED
                 queue.logger.info(f"任务完成: {task.name} (进程已结束)")
         
+        # 发送通知
+        self._send_task_notification(queue, task)
+        
         # 添加到历史
         queue.history_manager.add(task.to_dict())
         
@@ -581,3 +584,31 @@ class QueueManager:
         
         config = self.add_queue(name, yaml_path)
         return config['id']
+    
+    def _send_task_notification(self, queue: TaskManager, task: Task):
+        """
+        发送任务完成/失败通知
+        
+        Args:
+            queue: 任务队列
+            task: 任务对象
+        """
+        try:
+            from .notify import send_task_notification
+            
+            # 计算运行时长
+            duration = None
+            if task.start_time and task.end_time:
+                duration = (task.end_time - task.start_time).total_seconds()
+            
+            # 使用工作区目录
+            send_task_notification(
+                task_name=task.name,
+                status=task.status.value,
+                log_file=task.log_file,
+                duration=duration,
+                error_message=task.error_message,
+                workspace_dir=self.workspace_dir
+            )
+        except Exception as e:
+            logger.warning(f"发送通知失败: {e}")

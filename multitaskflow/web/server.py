@@ -86,7 +86,7 @@ def create_app(config_path: str = None, workspace_dir: str = None) -> FastAPI:
     app = FastAPI(
         title="MultiTaskFlow",
         description="多任务流管理工具 Web UI",
-        version="0.3.0",
+        version="1.0.0",
         lifespan=lifespan
     )
     
@@ -101,6 +101,7 @@ def create_app(config_path: str = None, workspace_dir: str = None) -> FastAPI:
     from .api import execute as execute_api
     from .api import queues as queues_api
     from .api import auth as auth_api
+    from .api import notification as notification_api
     from . import ws as ws_api
     
     # 注册 API 路由
@@ -108,6 +109,7 @@ def create_app(config_path: str = None, workspace_dir: str = None) -> FastAPI:
     app.include_router(tasks_api.router, prefix="/api", tags=["tasks"])
     app.include_router(execute_api.router, prefix="/api", tags=["execute"])
     app.include_router(queues_api.router, prefix="/api", tags=["queues"])
+    app.include_router(notification_api.router, prefix="/api", tags=["notification"])
     app.include_router(ws_api.router, tags=["websocket"])
     
     # 静态文件 - 优先使用 dist 目录（Vite 构建输出）
@@ -172,7 +174,7 @@ def run_server(
         path_info = f"工作空间: {Path.cwd()}"
     
     print(f"\n{'='*60}")
-    print(f"  MultiTaskFlow Web UI v0.3.0")
+    print(f"  MultiTaskFlow Web UI v1.0.0")
     print(f"  模式: {mode}")
     print(f"  访问地址: http://{host}:{port}")
     print(f"  {path_info}")

@@ -634,6 +634,9 @@ class TaskManager:
             task.error_message = f"退出码: {return_code}"
             self.logger.error(f"任务失败: {task.name} ({task.error_message})")
         
+        # 发送通知
+        self._send_task_notification(task)
+        
         # 添加到历史（持久化）
         self.history_manager.add(task.to_dict())
         
@@ -790,4 +793,33 @@ class TaskManager:
             self.queue_running = False
             self._queue_stop_flag = False
             self.logger.info("队列自动执行已停止")
+    
+    def _send_task_notification(self, task: Task):
+        """
+        发送任务完成/失败通知
+        
+        Args:
+            task: 任务对象
+        """
+        try:
+            from .notify import send_task_notification
+            
+            # 计算运行时长
+            duration = None
+            if task.start_time and task.end_time:
+                duration = (task.end_time - task.start_time).total_seconds()
+            
+            # 获取工作区目录（从配置文件路径推断）
+            workspace_dir = Path(self.config_path).parent if self.config_path else None
+            
+            send_task_notification(
+                task_name=task.name,
+                status=task.status.value,
+                log_file=task.log_file,
+                duration=duration,
+                error_message=task.error_message,
+                workspace_dir=workspace_dir
+            )
+        except Exception as e:
+            self.logger.warning(f"发送通知失败: {e}")
 
