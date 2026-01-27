@@ -76,6 +76,11 @@ export const api = {
         return res.json();
     },
 
+    async retryTask(id: string) {
+        const res = await fetch(`${BASE_URL}/api/tasks/${id}/retry`, { method: 'POST' });
+        return res.json();
+    },
+
     async stopAll() {
         const res = await fetch(`${BASE_URL}/api/stop-all`, { method: 'POST' });
         return res.json();
@@ -107,6 +112,15 @@ export const api = {
 
     async loadNewTasks() {
         const res = await fetch(`${BASE_URL}/api/load-new-tasks`, { method: 'POST' });
+        return res.json();
+    },
+
+    async loadSelectedTasks(tasks: { name: string; command: string; note?: string }[]) {
+        const res = await fetch(`${BASE_URL}/api/load-selected-tasks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tasks })
+        });
         return res.json();
     },
 

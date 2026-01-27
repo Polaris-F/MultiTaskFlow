@@ -179,35 +179,46 @@ def send_task_notification(
         else:
             duration_str = f"{minutes}分钟"
     
-    # 获取日志尾部
+    # 获取日志尾部并进行 HTML 转义
     log_tail = get_last_n_lines(log_file, 10)
+    # HTML 转义特殊字符，保持日志原始格式
+    import html
+    log_tail_escaped = html.escape(log_tail)
+    
+    # 错误信息也需要转义
+    error_html = ""
+    if error_message:
+        error_escaped = html.escape(error_message)
+        error_html = f"<div style='border: 2px solid #ef4444; padding: 12px; border-radius: 4px; margin-bottom: 16px;'><strong style='color: #ef4444;'>❌ 错误信息:</strong><br><pre style='margin: 8px 0 0 0; white-space: pre-wrap; color: #b91c1c;'>{error_escaped}</pre></div>"
     
     # 生成 HTML 内容
     title = f"{icon} {task_name} - {status_text}"
     
     content = f"""
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px; max-width: 600px;">
-    <div style="background: {color}20; border-left: 4px solid {color}; padding: 12px; margin-bottom: 16px; border-radius: 4px;">
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px; max-width: 800px;">
+    <div style="border-left: 4px solid {color}; padding: 12px; margin-bottom: 16px; border-radius: 4px; border: 1px solid {color};">
         <h2 style="margin: 0; color: {color};">{icon} {status_text}</h2>
-        <p style="margin: 8px 0 0 0; color: #374151;"><strong>{task_name}</strong></p>
+        <p style="margin: 8px 0 0 0;"><strong style="color: {color};">{task_name}</strong></p>
     </div>
     
     <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
         <tr>
             <td style="padding: 8px 0; color: #6b7280;">⏱ 运行时长</td>
-            <td style="padding: 8px 0; color: #1f2937;">{duration_str or '未知'}</td>
+            <td style="padding: 8px 0;"><strong>{duration_str or '未知'}</strong></td>
         </tr>
         <tr>
             <td style="padding: 8px 0; color: #6b7280;">🕐 完成时间</td>
-            <td style="padding: 8px 0; color: #1f2937;">{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td>
+            <td style="padding: 8px 0;"><strong>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</strong></td>
         </tr>
     </table>
     
-    {"<div style='background: #fef2f2; border: 1px solid #fecaca; padding: 12px; border-radius: 4px; margin-bottom: 16px;'><strong>❌ 错误信息:</strong><br>" + error_message + "</div>" if error_message else ""}
+    {error_html}
     
     <div style="margin-top: 16px;">
-        <h3 style="margin: 0 0 8px 0; color: #374151;">📄 日志尾部 (最后10行)</h3>
-        <pre style="background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; line-height: 1.5;">{log_tail}</pre>
+        <h3 style="margin: 0 0 8px 0;">📄 日志尾部 (最后10行)</h3>
+        <div style="background: #1e293b; border-radius: 4px; overflow-x: auto; max-width: 100%;">
+            <pre style="color: #e2e8f0; padding: 12px; margin: 0; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 12px; line-height: 1.6; white-space: pre; overflow-x: auto;">{log_tail_escaped}</pre>
+        </div>
     </div>
     
     <p style="color: #9ca3af; font-size: 12px; margin-top: 16px;">

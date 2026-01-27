@@ -54,6 +54,49 @@ async def stop_task(task_id: str, _=Depends(require_auth)):
     return {"success": True, "message": "任务已停止"}
 
 
+@router.post("/tasks/{task_id}/retry")
+async def retry_task(task_id: str, _=Depends(require_auth)):
+    """
+    重试任务 - 将失败/停止的任务重置为 pending 状态并加入队列末尾
+    """
+    from ..state import get_queue_manager
+    
+    # 尝试在所有队列中查找任务
+    qm = get_queue_manager()
+    manager = None
+    
+    if qm:
+        # 多队列模式：遍历所有队列查找任务
+        for queue in qm.queues.values():
+            if queue.get_task(task_id):
+                manager = queue
+                break
+    
+    if manager is None:
+        # 回退到当前队列
+        manager = get_task_manager()
+    
+    if manager is None:
+        raise HTTPException(status_code=400, detail="请先添加任务队列")
+    
+    try:
+        task = manager.retry_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="任务不存在")
+        
+        # 持久化状态
+        if qm:
+            qm._save_workspace()
+        
+        return {
+            "success": True,
+            "message": f"任务 {task.name} 已加入队列末尾",
+            "task": task.to_dict()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/stop-all")
 async def stop_all(_=Depends(require_auth)):
     """停止所有运行中的任务"""
@@ -294,6 +337,79 @@ async def load_new_tasks(_=Depends(require_auth)):
         "errors": result["errors"]
     }
 
+
+from pydantic import BaseModel
+from typing import List
+
+class SelectedTask(BaseModel):
+    name: str
+    command: str
+    note: str = ""
+
+class LoadSelectedTasksRequest(BaseModel):
+    tasks: List[SelectedTask]
+
+@router.post("/load-selected-tasks")
+async def load_selected_tasks(request: LoadSelectedTasksRequest, _=Depends(require_auth)):
+    """
+    加载用户选择的任务
+    
+    只加载用户在弹窗中勾选的任务。
+    """
+    from ..state import get_queue_manager
+    from ..manager import Task, TaskStatus, parse_gpu_from_command
+    
+    manager = get_task_manager()
+    
+    if manager is None:
+        return {
+            "success": False,
+            "message": "请先添加任务队列",
+            "loaded": 0,
+            "errors": []
+        }
+    
+    loaded = 0
+    errors = []
+    
+    for task_data in request.tasks:
+        if not task_data.name or not task_data.command:
+            errors.append(f"{task_data.name or '未命名'}: 缺少名称或命令")
+            continue
+        
+        with manager._lock:
+            task_id = manager._generate_task_id()
+            task = Task(
+                id=task_id,
+                name=task_data.name,
+                command=task_data.command,
+                note=task_data.note or None,
+                status=TaskStatus.PENDING,
+                gpu=parse_gpu_from_command(task_data.command)
+            )
+            manager.tasks[task_id] = task
+            manager.task_order.append(task_id)
+            
+            # 更新已加载名称集合
+            if not hasattr(manager, '_loaded_task_names'):
+                manager._loaded_task_names = set()
+            manager._loaded_task_names.add(task_data.name)
+            
+            loaded += 1
+            manager.logger.info(f"加载选中任务: {task_data.name} (ID: {task_id})")
+    
+    # 保存状态
+    if loaded > 0:
+        queue_manager = get_queue_manager()
+        if queue_manager:
+            queue_manager._save_workspace()
+    
+    return {
+        "success": True,
+        "message": f"已加载 {loaded} 个任务" if loaded > 0 else "没有任务被加载",
+        "loaded": loaded,
+        "errors": errors
+    }
 
 @router.get("/logs/{task_id}")
 async def get_log_content(task_id: str, lines: int = 500, _=Depends(require_auth)):

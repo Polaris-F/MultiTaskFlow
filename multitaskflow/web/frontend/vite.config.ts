@@ -16,6 +16,7 @@ export default defineConfig({
   },
   build: {
     outDir: '../static/dist',
-    emptyOutDir: true
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 700  // 提高警告阈值到 700KB
   }
 })

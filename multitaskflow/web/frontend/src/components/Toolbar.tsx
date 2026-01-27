@@ -11,6 +11,8 @@ interface NewTask {
     name: string;
     command: string;
     note?: string;
+    valid?: boolean;
+    error?: string;
 }
 
 export function Toolbar({ onAddTask }: ToolbarProps) {
@@ -35,10 +37,18 @@ export function Toolbar({ onAddTask }: ToolbarProps) {
         }
     };
 
-    const handleLoadNewTasks = async () => {
+    const handleLoadNewTasks = async (selectedTasks: NewTask[]) => {
         try {
-            await api.loadNewTasks();
-            showToast('已加载新任务', 'success');
+            const result = await api.loadSelectedTasks(selectedTasks.map(t => ({
+                name: t.name,
+                command: t.command,
+                note: t.note || ''
+            })));
+            if (result.loaded > 0) {
+                showToast(`已加载 ${result.loaded} 个任务`, 'success');
+            } else {
+                showToast('没有任务被加载', 'info');
+            }
             await refreshTasks();
         } catch (e) {
             showToast('加载失败', 'error');

@@ -101,7 +101,7 @@ class TaskManager:
     """
     
     def __init__(self, config_path: str, history_file: str = None, 
-                 on_task_started=None, on_task_finished=None):
+                 on_task_started=None, on_task_finished=None, saved_tasks: list = None):
         """
         初始化任务管理器
         
@@ -110,6 +110,7 @@ class TaskManager:
             history_file: 历史记录文件路径（可选）
             on_task_started: 任务启动回调 (task_id, pid, log_file) -> None
             on_task_finished: 任务完成回调 (task_id) -> None
+            saved_tasks: 从工作空间恢复的任务列表（可选，优先于 YAML 加载）
         """
         self.config_path = Path(config_path).resolve()  # 确保使用绝对路径
         self.config_dir = self.config_path.parent
@@ -118,6 +119,8 @@ class TaskManager:
         self.on_task_started = on_task_started
         self.on_task_finished = on_task_finished
         
+        # 保存的任务列表（稍后用于恢复）
+        self._saved_tasks = saved_tasks
         # 任务存储
         self.tasks: Dict[str, Task] = {}  # id -> Task
         self.task_order: List[str] = []   # 任务顺序（id列表）
@@ -178,11 +181,87 @@ class TaskManager:
     
     def load_tasks(self) -> int:
         """
-        从配置文件加载任务
+        从配置文件或保存的任务列表加载任务
+        
+        如果有保存的任务列表（从 workspace 恢复），优先使用它们；
+        否则从 YAML 文件加载。
         
         Returns:
             加载的任务数量
         """
+        # 优先从保存的任务列表恢复
+        if self._saved_tasks:
+            return self._load_from_saved_tasks()
+        
+        # 否则从 YAML 加载
+        return self._load_from_yaml()
+    
+    def _load_from_saved_tasks(self) -> int:
+        """从保存的任务列表恢复任务"""
+        count = 0
+        for task_data in self._saved_tasks:
+            try:
+                task_id = task_data['id']
+                status_str = task_data.get('status', 'pending')
+                
+                # 映射状态字符串到枚举
+                status_map = {
+                    'pending': TaskStatus.PENDING,
+                    'running': TaskStatus.RUNNING,
+                    'completed': TaskStatus.COMPLETED,
+                    'failed': TaskStatus.FAILED,
+                    'stopped': TaskStatus.STOPPED
+                }
+                status = status_map.get(status_str, TaskStatus.PENDING)
+                
+                # 如果任务之前是运行中，重启后应该变为停止状态
+                # （因为进程已经不存在了，除非被 _restore_running_tasks 恢复）
+                if status == TaskStatus.RUNNING:
+                    status = TaskStatus.STOPPED
+                
+                task = Task(
+                    id=task_id,
+                    name=task_data.get('name', ''),
+                    command=task_data.get('command', ''),
+                    status=status,
+                    gpu=task_data.get('gpu'),
+                    note=task_data.get('note'),
+                    log_file=task_data.get('log_file'),
+                    start_time=task_data.get('start_time'),
+                    end_time=task_data.get('end_time'),
+                    duration=task_data.get('duration'),
+                    error_message=task_data.get('error_message')
+                )
+                
+                self.tasks[task_id] = task
+                self.task_order.append(task_id)
+                
+                # 更新计数器确保新任务 ID 不冲突
+                try:
+                    if task_id.startswith('task_'):
+                        parts = task_id.split('_')
+                        if len(parts) >= 2:
+                            num = int(parts[1])
+                            self._task_counter = max(self._task_counter, num)
+                except:
+                    pass
+                
+                count += 1
+            except Exception as e:
+                self.logger.error(f"恢复任务失败: {e}")
+        
+        self.logger.info(f"从工作空间恢复 {count} 个任务")
+        
+        # 保存已加载的任务名称用于去重
+        self._loaded_task_names = {t.name for t in self.tasks.values()}
+        
+        # 清除保存的任务列表
+        self._saved_tasks = None
+        
+        return count
+    
+    def _load_from_yaml(self) -> int:
+        """从 YAML 配置文件加载任务"""
         if not self.config_path.exists():
             self.logger.warning(f"配置文件不存在: {self.config_path}")
             return 0
@@ -218,7 +297,7 @@ class TaskManager:
                 self.task_order.append(task_id)
                 count += 1
             
-            self.logger.info(f"已加载 {count} 个任务")
+            self.logger.info(f"从 YAML 加载 {count} 个任务")
             
             # 保存已加载的任务名称用于去重
             self._loaded_task_names = {t.name for t in self.tasks.values()}
@@ -269,14 +348,16 @@ class TaskManager:
             
             new_tasks = []
             for task_config in task_list:
-                # 跳过 skipped 状态
-                if task_config.get('status') == 'skipped':
+                # 跳过 skipped 和 completed 状态
+                status = task_config.get('status', 'pending')
+                if status in ('skipped', 'completed'):
                     continue
                 
                 name = task_config.get('name', '')
                 command = task_config.get('command', '')
+                note = task_config.get('note', '')
                 
-                # 检查是否是新任务
+                # 检查是否是新任务（基于 name 判断）
                 if name in existing_names:
                     continue
                 
@@ -284,6 +365,7 @@ class TaskManager:
                 task_info = {
                     "name": name,
                     "command": command,
+                    "note": note,
                     "valid": True,
                     "error": None
                 }
@@ -473,6 +555,104 @@ class TaskManager:
             self.task_order.remove(task_id)
             self.logger.info(f"删除任务: {task.name} (ID: {task_id})")
             return True
+    
+    def retry_task(self, task_id: str) -> Optional[Task]:
+        """
+        重试任务 - 将失败/停止的任务重置为 pending 状态
+        
+        Args:
+            task_id: 任务ID
+        
+        Returns:
+            重置后的任务，如果不存在返回 None
+        
+        Raises:
+            ValueError: 如果任务状态不允许重试
+        """
+        task = self.tasks.get(task_id)
+        
+        # 【防护】无论任务在队列还是历史，都先清理历史记录中的同ID记录
+        # 这确保不会出现同一任务同时存在于队列和历史的情况
+        history_item_backup = None
+        for item in self.history_manager.items:
+            if item.get('id') == task_id:
+                history_item_backup = item.copy()
+                break
+        self.history_manager.remove(task_id)
+        
+        # 如果任务已在队列中
+        if task:
+            # 如果是 pending 状态，说明之前已经重试过了
+            if task.status == TaskStatus.PENDING:
+                raise ValueError(f"任务已在队列中等待执行，无需重试")
+            if task.status == TaskStatus.RUNNING:
+                raise ValueError(f"任务正在运行中，无法重试")
+            if task.status not in (TaskStatus.FAILED, TaskStatus.STOPPED, TaskStatus.COMPLETED):
+                raise ValueError(f"只有已结束的任务可以重试 (当前状态: {task.status})")
+            
+            with self._lock:
+                # 删除旧日志文件
+                if task.log_file:
+                    try:
+                        import os
+                        if os.path.exists(task.log_file):
+                            os.remove(task.log_file)
+                            self.logger.info(f"已删除旧日志: {task.log_file}")
+                    except Exception as e:
+                        self.logger.warning(f"删除旧日志失败: {e}")
+                
+                # 完全重置任务状态
+                task.status = TaskStatus.PENDING
+                task.start_time = None
+                task.end_time = None
+                task.duration = None
+                task.process = None
+                task.error_message = None
+                task.log_file = None
+                
+                # 将任务移到队列末尾
+                if task_id in self.task_order:
+                    self.task_order.remove(task_id)
+                self.task_order.append(task_id)
+                
+                self.logger.info(f"重试任务: {task.name} (ID: {task_id}) - 已加入队列末尾")
+                return task
+        
+        # 任务不在队列中，尝试从历史记录备份恢复
+        if history_item_backup:
+            status = history_item_backup.get('status')
+            if status not in ('failed', 'stopped', 'completed'):
+                raise ValueError(f"只有已结束的任务可以重试 (当前状态: {status})")
+            
+            # 删除旧日志文件
+            old_log = history_item_backup.get('log_file')
+            if old_log:
+                try:
+                    import os
+                    if os.path.exists(old_log):
+                        os.remove(old_log)
+                        self.logger.info(f"已删除旧日志: {old_log}")
+                except Exception as e:
+                    self.logger.warning(f"删除旧日志失败: {e}")
+            
+            # 从历史记录创建新任务
+            with self._lock:
+                new_task = Task(
+                    id=task_id,
+                    name=history_item_backup.get('name', ''),
+                    command=history_item_backup.get('command', ''),
+                    status=TaskStatus.PENDING,
+                    gpu=history_item_backup.get('gpu'),
+                    note=history_item_backup.get('note'),
+                )
+                self.tasks[task_id] = new_task
+                self.task_order.append(task_id)
+                
+                self.logger.info(f"从历史恢复并重试任务: {new_task.name} (ID: {task_id})")
+                return new_task
+        
+        # 历史记录中也找不到
+        return None
     
     def reorder_tasks(self, new_order: List[str]) -> bool:
         """

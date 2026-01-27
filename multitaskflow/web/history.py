@@ -119,6 +119,24 @@ class HistoryManager:
         """获取历史记录数量"""
         return len(self.items)
     
+    def remove(self, task_id: str) -> bool:
+        """
+        从历史记录中删除任务
+        
+        Args:
+            task_id: 任务ID
+        
+        Returns:
+            是否成功删除
+        """
+        for i, item in enumerate(self.items):
+            if item.get('id') == task_id:
+                removed = self.items.pop(i)
+                self._save()
+                logger.info(f"从历史删除: {removed.get('name')} (ID: {task_id})")
+                return True
+        return False
+    
     def update_note(self, task_id: str, note: str) -> bool:
         """
         更新历史记录中任务的备注

@@ -19,7 +19,7 @@ const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
 };
 
 export function TaskDetailDialog({ task, isOpen, onClose, onViewLog }: TaskDetailDialogProps) {
-    const { showToast, deleteTask, moveTask, refreshTasks } = useTaskStore();
+    const { showToast, deleteTask, moveTask, refreshTasks, refreshHistory } = useTaskStore();
 
     // 编辑模式状态
     const [isEditMode, setIsEditMode] = useState(false);
@@ -43,6 +43,7 @@ export function TaskDetailDialog({ task, isOpen, onClose, onViewLog }: TaskDetai
     const hasLog = !!task.log_file || task.status === 'running';
     const isPending = task.status === 'pending';
     const isRunning = task.status === 'running';
+    const isFinished = task.status === 'failed' || task.status === 'stopped' || task.status === 'completed';
     const statusConfig = STATUS_CONFIG[task.status] || { color: 'text-slate-400', label: task.status };
 
     const copyToClipboard = (text: string) => {
@@ -118,6 +119,25 @@ export function TaskDetailDialog({ task, isOpen, onClose, onViewLog }: TaskDetai
         setIsEditMode(false);
     };
 
+    const handleRetry = async () => {
+        setIsSubmitting(true);
+        try {
+            const result = await api.retryTask(task.id);
+            if (result.success) {
+                showToast('任务已加入队列', 'success');
+                await refreshTasks();
+                await refreshHistory();  // 同时刷新历史记录
+                onClose();
+            } else {
+                showToast(result.detail || '重试失败', 'error');
+            }
+        } catch (e: any) {
+            showToast(`重试失败: ${e.message}`, 'error');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     // 按钮禁用原因
     const getDisabledReason = (action: string): string | null => {
         if (action === 'move' || action === 'edit' || action === 'delete') {
@@ -128,13 +148,17 @@ export function TaskDetailDialog({ task, isOpen, onClose, onViewLog }: TaskDetai
         if (action === 'log') {
             return hasLog ? null : '暂无日志';
         }
+        if (action === 'retry') {
+            if (!isFinished) return '任务未结束';
+            return null;
+        }
         return null;
     };
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
             <div
-                className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden border border-slate-700"
+                className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl mx-4 overflow-hidden border border-slate-700"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header - 在查看模式显示状态标签 */}
@@ -281,9 +305,9 @@ export function TaskDetailDialog({ task, isOpen, onClose, onViewLog }: TaskDetai
                         </div>
                     ) : (
                         /* 查看模式按钮 */
-                        <div className="flex justify-between items-center">
+                        <div className="flex flex-wrap justify-between items-center gap-3">
                             {/* Left side - Action buttons */}
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                                 {/* Move Up */}
                                 <ActionButton
                                     icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>}
@@ -317,10 +341,19 @@ export function TaskDetailDialog({ task, isOpen, onClose, onViewLog }: TaskDetai
                                     disabledReason={getDisabledReason('delete')}
                                     variant="danger"
                                 />
+                                {/* Retry - 重试已结束的任务 */}
+                                <ActionButton
+                                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>}
+                                    label="重试"
+                                    onClick={handleRetry}
+                                    disabled={!isFinished || isSubmitting}
+                                    disabledReason={getDisabledReason('retry')}
+                                    variant="primary"
+                                />
                             </div>
 
                             {/* Right side - View Log and Close */}
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                                 <ActionButton
                                     icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
                                     label="日志"
@@ -355,7 +388,7 @@ interface ActionButtonProps {
 }
 
 function ActionButton({ icon, label, onClick, disabled, disabledReason, variant = 'default' }: ActionButtonProps) {
-    const baseClasses = "px-3 py-2 text-sm rounded-lg transition-colors flex items-center gap-1";
+    const baseClasses = "px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap";
 
     const variantClasses = {
         default: disabled
@@ -379,10 +412,7 @@ function ActionButton({ icon, label, onClick, disabled, disabledReason, variant 
             disabled={disabled}
         >
             {icon}
-            <span className="hidden sm:inline">{label}</span>
-            {disabled && disabledReason && (
-                <span className="text-[10px] opacity-60 hidden md:inline">({disabledReason})</span>
-            )}
+            <span>{label}</span>
         </button>
     );
 }

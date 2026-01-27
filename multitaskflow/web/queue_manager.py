@@ -70,13 +70,16 @@ class QueueManager:
             # 加载运行中任务状态
             self.running_tasks = data.get('running_tasks', {})
             
+            # 保存任务列表数据，稍后用于恢复
+            saved_queue_tasks = data.get('queue_tasks', {})
+            
             for queue_config in data.get('queues', []):
                 queue_id = queue_config.get('id')
                 yaml_path = queue_config.get('yaml_path')
                 
                 if queue_id and yaml_path and Path(yaml_path).exists():
                     try:
-                        self._load_queue(queue_id, queue_config)
+                        self._load_queue(queue_id, queue_config, saved_queue_tasks.get(queue_id))
                         logger.info(f"加载队列: {queue_config.get('name')} ({yaml_path})")
                     except Exception as e:
                         logger.error(f"加载队列失败 {yaml_path}: {e}")
@@ -104,8 +107,14 @@ class QueueManager:
         except Exception as e:
             logger.error(f"加载工作空间配置失败: {e}")
     
-    def _load_queue(self, queue_id: str, config: Dict[str, Any]):
-        """加载单个队列"""
+    def _load_queue(self, queue_id: str, config: Dict[str, Any], saved_tasks: list = None):
+        """加载单个队列
+        
+        Args:
+            queue_id: 队列ID
+            config: 队列配置
+            saved_tasks: 保存的任务列表（如果有的话，优先使用）
+        """
         yaml_path = config['yaml_path']
         # 历史文件在 YAML 所在目录的 logs/.history.json
         yaml_dir = Path(yaml_path).parent
@@ -122,23 +131,45 @@ class QueueManager:
             yaml_path, 
             str(history_file),
             on_task_started=on_task_started,
-            on_task_finished=on_task_finished
+            on_task_finished=on_task_finished,
+            saved_tasks=saved_tasks  # 传入保存的任务列表
         )
         self.queues[queue_id] = manager
         self.queue_configs[queue_id] = config
     
     def _save_workspace(self):
-        """保存工作空间配置到 .workspace.json（包括运行中任务和队列状态）"""
+        """保存工作空间配置到 .workspace.json（包括运行中任务、队列状态和所有任务列表）"""
         # 更新队列配置中的运行状态
         for queue_id, config in self.queue_configs.items():
             if queue_id in self.queues:
                 config['queue_running'] = self.queues[queue_id].queue_running
         
+        # 保存每个队列的任务列表（包括所有任务，不仅仅是 task_order 中的）
+        queue_tasks = {}
+        for queue_id, manager in self.queues.items():
+            tasks_data = []
+            saved_ids = set()
+            
+            # 先按 task_order 保存
+            for task_id in manager.task_order:
+                task = manager.tasks.get(task_id)
+                if task:
+                    tasks_data.append(task.to_dict())
+                    saved_ids.add(task_id)
+            
+            # 再保存不在 task_order 但在 tasks 中的任务（如运行中的任务）
+            for task_id, task in manager.tasks.items():
+                if task_id not in saved_ids:
+                    tasks_data.append(task.to_dict())
+            
+            queue_tasks[queue_id] = tasks_data
+        
         data = {
-            "version": "1.1",
+            "version": "1.2",
             "updated_at": datetime.now().isoformat(),
             "queues": list(self.queue_configs.values()),
-            "running_tasks": self.running_tasks
+            "running_tasks": self.running_tasks,
+            "queue_tasks": queue_tasks
         }
         
         try:
