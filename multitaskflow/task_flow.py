@@ -963,6 +963,16 @@ def main():
             # 启动 Web UI
             run_web_server(sys.argv[2:])
             sys.exit(0)
+        
+        # 检查是否是 status 子命令
+        if sys.argv[1] == 'status':
+            show_backend_status()
+            sys.exit(0)
+        
+        # 检查是否是 monitor 子命令
+        if sys.argv[1] == 'monitor':
+            run_pid_monitor(sys.argv[2:])
+            sys.exit(0)
             
         # 有参数但不是帮助参数，视为配置文件路径
         config_path = sys.argv[1]
@@ -1037,12 +1047,189 @@ def run_web_server(args: list):
         reload=parsed.reload
     )
 
+
+def show_backend_status():
+    """
+    显示运行中的 MultiTaskFlow 后端服务状态
+    
+    扫描系统进程，查找运行中的 uvicorn/fastapi 进程，
+    显示其 PID、端口、工作区等信息。
+    """
+    print("\n\033[1;36m=== MultiTaskFlow 后端状态 ===\033[0m\n")
+    
+    backends = []
+    
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'cwd', 'create_time']):
+        try:
+            cmdline = proc.info['cmdline'] or []
+            cmdline_str = " ".join(cmdline)
+            
+            # 查找 uvicorn 运行 multitaskflow 的进程
+            if 'uvicorn' in cmdline_str.lower() and 'multitaskflow' in cmdline_str.lower():
+                # 提取端口号
+                port = 8080  # 默认端口
+                for i, arg in enumerate(cmdline):
+                    if arg == '--port' and i + 1 < len(cmdline):
+                        try:
+                            port = int(cmdline[i + 1])
+                        except ValueError:
+                            pass
+                    elif arg.startswith('--port='):
+                        try:
+                            port = int(arg.split('=')[1])
+                        except ValueError:
+                            pass
+                
+                # 获取工作目录
+                cwd = proc.info.get('cwd', '未知')
+                
+                # 计算运行时长
+                create_time = datetime.fromtimestamp(proc.info['create_time'])
+                uptime = datetime.now() - create_time
+                hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                uptime_str = f"{hours}h{minutes}m" if hours > 0 else f"{minutes}m{seconds}s"
+                
+                backends.append({
+                    'pid': proc.info['pid'],
+                    'port': port,
+                    'cwd': cwd,
+                    'uptime': uptime_str
+                })
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    
+    if backends:
+        print(f"\033[1;32m发现 {len(backends)} 个运行中的后端:\033[0m\n")
+        for i, b in enumerate(backends, 1):
+            print(f"  [{i}] PID: \033[1;33m{b['pid']}\033[0m")
+            print(f"      端口: \033[1;34mhttp://localhost:{b['port']}\033[0m")
+            print(f"      工作区: {b['cwd']}")
+            print(f"      运行时长: {b['uptime']}")
+            print()
+    else:
+        print("\033[1;33m未发现运行中的 MultiTaskFlow 后端\033[0m")
+        print("\n启动后端:")
+        print("  taskflow web                    # 使用当前目录")
+        print("  taskflow web -w /path/to/dir    # 指定工作区")
+        print("  taskflow web --port 9000        # 指定端口")
+    
+    print()
+
+
+def run_pid_monitor(args: list):
+    """
+    临时监控指定 PID，进程结束后发送通知
+    
+    Args:
+        args: 命令行参数列表
+    """
+    import argparse
+    import sys
+    
+    parser = argparse.ArgumentParser(
+        prog='taskflow monitor',
+        description='监控指定 PID，进程结束后发送通知'
+    )
+    parser.add_argument('pid', type=int, help='要监控的进程 PID')
+    parser.add_argument('--name', '-n', default=None, help='进程名称（用于通知），默认从进程命令获取')
+    parser.add_argument('--silent', '-s', action='store_true', help='静默模式，不发送通知')
+    
+    parsed = parser.parse_args(args)
+    
+    # 验证 PID 存在
+    try:
+        proc = psutil.Process(parsed.pid)
+        cmdline = proc.cmdline()
+        proc_name = parsed.name or (cmdline[0] if cmdline else f"PID {parsed.pid}")
+        
+        # 简化进程名称显示
+        if len(proc_name) > 50:
+            proc_name = "..." + proc_name[-47:]
+        
+    except psutil.NoSuchProcess:
+        print(f"\033[1;31m错误: PID {parsed.pid} 不存在\033[0m")
+        sys.exit(1)
+    except psutil.AccessDenied:
+        print(f"\033[1;31m错误: 无权限访问 PID {parsed.pid}\033[0m")
+        sys.exit(1)
+    
+    print(f"\n\033[1;36m=== 开始监控进程 ===\033[0m")
+    print(f"  PID: \033[1;33m{parsed.pid}\033[0m")
+    print(f"  名称: {proc_name}")
+    print(f"  开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\n\033[1;34m正在监控中，按 Ctrl+C 退出...\033[0m\n")
+    
+    start_time = datetime.now()
+    
+    try:
+        # 监控循环
+        while True:
+            try:
+                if not proc.is_running() or proc.status() == psutil.STATUS_ZOMBIE:
+                    break
+                time.sleep(5)
+            except psutil.NoSuchProcess:
+                break
+    except KeyboardInterrupt:
+        print("\n\033[1;33m用户中断监控\033[0m")
+        sys.exit(0)
+    
+    # 进程结束
+    end_time = datetime.now()
+    duration = end_time - start_time
+    hours, remainder = divmod(int(duration.total_seconds()), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    if hours > 0:
+        duration_str = f"{hours}小时{minutes}分{seconds}秒"
+    elif minutes > 0:
+        duration_str = f"{minutes}分{seconds}秒"
+    else:
+        duration_str = f"{seconds}秒"
+    
+    print(f"\n\033[1;32m=== 进程已结束 ===\033[0m")
+    print(f"  PID: {parsed.pid}")
+    print(f"  运行时长: {duration_str}")
+    print(f"  结束时间: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 发送通知
+    if not parsed.silent:
+        print(f"\n\033[1;34m正在发送通知...\033[0m")
+        
+        content = f"""
+【进程监控完成】
+
+进程名称: {proc_name}
+PID: {parsed.pid}
+运行时长: {duration_str}
+结束时间: {end_time.strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+由 taskflow monitor 发送
+        """
+        
+        success = Msg_push(
+            title=f"进程结束: {parsed.name or f'PID {parsed.pid}'}",
+            content=content
+        )
+        
+        if success:
+            print("\033[1;32m✓ 通知已发送\033[0m")
+        else:
+            print("\033[1;31m✗ 通知发送失败，请检查 MSG_PUSH_TOKEN 配置\033[0m")
+    
+    print()
+
+
 def print_help_message():
     """打印帮助信息"""
     print("\n\033[1;36m=== MultiTaskFlow 使用帮助 ===\033[0m")
     print("\033[1m用法:\033[0m")
     print("  taskflow <配置文件路径>           # CLI 模式：顺序执行任务")
     print("  taskflow web [选项]               # Web 模式：启动可视化管理界面")
+    print("  taskflow status                   # 查看运行中的后端服务状态")
+    print("  taskflow monitor <pid> [选项]     # 监控指定 PID，结束后发送通知")
     print("\n\033[1m参数:\033[0m")
     print("  <配置文件路径>  YAML格式的任务配置文件路径")
     print("  -h, --help     显示此帮助信息并退出")
@@ -1076,6 +1263,27 @@ def print_help_message():
     print("")
     print("  # 后台运行并记录日志")
     print("  nohup taskflow my_tasks.yaml > taskflow.log 2>&1 &")
+    
+    print("\n\033[1;33m=== 状态查看 ===\033[0m")
+    print("\033[1m用法:\033[0m taskflow status")
+    print("  显示所有运行中的 MultiTaskFlow 后端服务")
+    print("  包括 PID、端口、工作区、运行时长")
+    
+    print("\n\033[1;33m=== 进程监控 ===\033[0m")
+    print("\033[1m用法:\033[0m taskflow monitor <pid> [选项]")
+    print("\n\033[1m监控选项:\033[0m")
+    print("  <pid>              要监控的进程 ID（必需）")
+    print("  -n, --name NAME    进程名称（用于通知）")
+    print("  -s, --silent       静默模式，不发送通知")
+    print("\n\033[1m监控示例:\033[0m")
+    print("  # 监控 PID 12345")
+    print("  taskflow monitor 12345")
+    print("")
+    print("  # 指定名称")
+    print("  taskflow monitor 12345 --name '训练任务'")
+    print("")
+    print("  # 静默模式（只打印，不发通知）")
+    print("  taskflow monitor 12345 --silent")
     
     print("\n\033[1m配置文件格式示例:\033[0m")
     print("""# 任务流配置示例
