@@ -151,6 +151,9 @@ class TaskManager:
         from .history import HistoryManager
         self.history_manager = HistoryManager(history_file)
         
+        # 从历史记录初始化已加载任务名称（用于去重，防止重复添加已执行过的任务）
+        self._loaded_task_names = {h.get('name') for h in self.history_manager.items if h.get('name')}
+        
         # 设置日志（使用唯一的 logger 名称，避免多队列日志混淆）
         # 使用配置文件路径的哈希作为唯一标识
         import hashlib
@@ -345,6 +348,10 @@ class TaskManager:
             # 获取当前已有的任务名称
             existing_names = {t.name for t in self.tasks.values()}
             existing_names.update(getattr(self, '_loaded_task_names', set()))
+            
+            # 【重要】从历史记录获取已执行任务名称，防止重复添加
+            history_names = {h.get('name') for h in self.history_manager.items if h.get('name')}
+            existing_names.update(history_names)
             
             new_tasks = []
             for task_config in task_list:

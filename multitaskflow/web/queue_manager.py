@@ -84,7 +84,13 @@ class QueueManager:
                     except Exception as e:
                         logger.error(f"加载队列失败 {yaml_path}: {e}")
                 else:
-                    logger.warning(f"跳过无效队列配置: {queue_config}")
+                    # 更详细的跳过原因日志
+                    if not queue_id:
+                        logger.warning(f"跳过无效队列配置: 缺少队列 ID")
+                    elif not yaml_path:
+                        logger.warning(f"跳过队列 '{queue_config.get('name')}': 缺少 YAML 路径")
+                    elif not Path(yaml_path).exists():
+                        logger.warning(f"跳过队列 '{queue_config.get('name')}': YAML 文件不存在 ({yaml_path})")
             
             # 恢复运行中任务的监控
             self._restore_running_tasks()
@@ -134,6 +140,11 @@ class QueueManager:
             on_task_finished=on_task_finished,
             saved_tasks=saved_tasks  # 传入保存的任务列表
         )
+        
+        # 【关键】必须调用 load_tasks() 来实际加载任务到内存
+        # 如果有 saved_tasks，会优先从中恢复；否则从 YAML 加载
+        manager.load_tasks()
+        
         self.queues[queue_id] = manager
         self.queue_configs[queue_id] = config
     

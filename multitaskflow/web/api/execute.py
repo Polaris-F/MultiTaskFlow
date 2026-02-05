@@ -371,10 +371,24 @@ async def load_selected_tasks(request: LoadSelectedTasksRequest, _=Depends(requi
     
     loaded = 0
     errors = []
+    skipped = 0
+    
+    # 【重要】构建完整的已存在任务名称集合（包括当前队列和历史记录）
+    existing_names = {t.name for t in manager.get_all_tasks()}
+    existing_names.update(getattr(manager, '_loaded_task_names', set()))
+    # 从历史记录获取已执行任务名称
+    history_names = {h.get('name') for h in manager.history_manager.items if h.get('name')}
+    existing_names.update(history_names)
     
     for task_data in request.tasks:
         if not task_data.name or not task_data.command:
             errors.append(f"{task_data.name or '未命名'}: 缺少名称或命令")
+            continue
+        
+        # 【新增】检查是否重复任务
+        if task_data.name in existing_names:
+            errors.append(f"{task_data.name}: 任务已存在（队列或历史中），已跳过")
+            skipped += 1
             continue
         
         with manager._lock:
@@ -404,10 +418,20 @@ async def load_selected_tasks(request: LoadSelectedTasksRequest, _=Depends(requi
         if queue_manager:
             queue_manager._save_workspace()
     
+    # 构建返回消息
+    message_parts = []
+    if loaded > 0:
+        message_parts.append(f"已加载 {loaded} 个任务")
+    if skipped > 0:
+        message_parts.append(f"跳过 {skipped} 个重复任务")
+    if not message_parts:
+        message_parts.append("没有任务被加载")
+    
     return {
         "success": True,
-        "message": f"已加载 {loaded} 个任务" if loaded > 0 else "没有任务被加载",
+        "message": "，".join(message_parts),
         "loaded": loaded,
+        "skipped": skipped,
         "errors": errors
     }
 
