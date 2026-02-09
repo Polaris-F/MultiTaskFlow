@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueueStore } from '../stores/queueStore';
 import { useTaskStore } from '../stores/taskStore';
 
@@ -10,18 +10,29 @@ interface AddQueueDialogProps {
 export function AddQueueDialog({ isOpen, onClose }: AddQueueDialogProps) {
     const [name, setName] = useState('');
     const [yamlPath, setYamlPath] = useState('');
+    const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { addQueue } = useQueueStore();
     const { showToast } = useTaskStore();
+
+    useEffect(() => {
+        if (isOpen) {
+            setName('');
+            setYamlPath('');
+            setError('');
+        }
+    }, [isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         if (!name.trim() || !yamlPath.trim()) {
+            setError('队列名称和 YAML 路径不能为空');
             showToast('队列名称和 YAML 路径不能为空', 'error');
             return;
         }
 
+        setError('');
         setIsSubmitting(true);
 
         try {
@@ -30,11 +41,14 @@ export function AddQueueDialog({ isOpen, onClose }: AddQueueDialogProps) {
                 showToast('队列已添加', 'success');
                 setName('');
                 setYamlPath('');
+                setError('');
                 onClose();
             } else {
+                setError('添加失败');
                 showToast('添加失败', 'error');
             }
         } catch (e: any) {
+            setError(`添加失败: ${e.message}`);
             showToast(`添加失败: ${e.message}`, 'error');
         } finally {
             setIsSubmitting(false);
@@ -44,7 +58,7 @@ export function AddQueueDialog({ isOpen, onClose }: AddQueueDialogProps) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+        <div data-mtf-modal="true" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
             <div
                 className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-700"
                 onClick={(e) => e.stopPropagation()}
@@ -93,6 +107,12 @@ export function AddQueueDialog({ isOpen, onClose }: AddQueueDialogProps) {
                             ⓘ 工作目录将自动设为 YAML 所在文件夹
                         </p>
                     </div>
+
+                    {error && (
+                        <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                            {error}
+                        </div>
+                    )}
 
                     {/* Buttons */}
                     <div className="flex justify-end gap-3 pt-2">

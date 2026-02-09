@@ -49,7 +49,7 @@ function CommandDialog({ command, title, isOpen, onClose }: {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+        <div data-mtf-modal="true" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
             <div
                 className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-xl mx-4 overflow-hidden border border-slate-700"
                 onClick={(e) => e.stopPropagation()}
@@ -189,20 +189,24 @@ export function LogPanel({ taskId, onClose, onSelectLog }: LogPanelProps) {
 
             ws.onmessage = (event) => {
                 if (cancelled) return;
-                const data = JSON.parse(event.data);
-                if (data.type === 'init') {
-                    // 初始化消息包含日志文件路径
-                    if (data.log_file) {
-                        setLogPath(data.log_file);
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'init') {
+                        // 初始化消息包含日志文件路径
+                        if (data.log_file) {
+                            setLogPath(data.log_file);
+                        }
+                    } else if (data.type === 'log') {
+                        appendLogContent(data.content);
+                    } else if (data.type === 'end') {
+                        appendLogContent(`\n\n✅ ${data.message}`);
+                    } else if (data.type === 'info') {
+                        setLogContent(data.message);
+                    } else if (data.type === 'error') {
+                        setLogContent(`⚠️ ${data.message}`);
                     }
-                } else if (data.type === 'log') {
-                    appendLogContent(data.content);
-                } else if (data.type === 'end') {
-                    appendLogContent(`\n\n✅ ${data.message}`);
-                } else if (data.type === 'info') {
-                    setLogContent(data.message);
-                } else if (data.type === 'error') {
-                    setLogContent(`⚠️ ${data.message}`);
+                } catch (e) {
+                    console.error('Failed to parse WebSocket message:', e);
                 }
             };
 

@@ -124,7 +124,6 @@ def Msg_push(title: str, content: str, logger: Optional[logging.Logger] = None) 
                 return True
             elif result.get('code') == 429:  # 频率限制错误码
                 logger.warning(f"消息发送受到频率限制，将在 {wait_time} 秒后重试...")
-                time.sleep(wait_time)  # 遇到频率限制时额外等待
                 continue
             else:
                 error_msg = f"消息发送失败，状态码: {response.status_code}, 返回: {response.text}"
@@ -141,10 +140,6 @@ def Msg_push(title: str, content: str, logger: Optional[logging.Logger] = None) 
             logger.error(f"网络请求失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
         except Exception as e:
             logger.error(f"发送通知时发生未知错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-        
-        # 如果不是最后一次尝试，等待一段时间后继续
-        if attempt < max_retries - 1:
-            time.sleep(wait_time)
     
     logger.error("多次尝试后仍无法发送消息")
     return False

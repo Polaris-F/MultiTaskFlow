@@ -6,7 +6,6 @@ import '@xterm/xterm/css/xterm.css';
 
 interface XTerminalProps {
     content: string;
-    onContentUpdate?: (content: string) => void;
 }
 
 export function XTerminal({ content }: XTerminalProps) {

@@ -68,8 +68,16 @@ async def retry_task(task_id: str, _=Depends(require_auth)):
     if qm:
         # 多队列模式：遍历所有队列查找任务
         for queue in qm.queues.values():
+            # 先在活动任务中找
             if queue.get_task(task_id):
                 manager = queue
+                break
+            # 再在历史记录中找
+            for item in queue.history_manager.items:
+                if item.get('id') == task_id:
+                    manager = queue
+                    break
+            if manager is not None:
                 break
     
     if manager is None:

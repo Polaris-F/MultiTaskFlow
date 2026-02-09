@@ -1,9 +1,26 @@
+import { useEffect, useState } from 'react';
+import { api } from '../api';
 import { useTaskStore } from '../stores/taskStore';
 import { useSettingsStore } from '../stores/settingsStore';
 
 export function Header() {
     const { queueStatus, runningTasks } = useTaskStore();
     const { setSettingsOpen } = useSettingsStore();
+    const [version, setVersion] = useState('1.0.6');
+
+    useEffect(() => {
+        let mounted = true;
+        api.getHealth()
+            .then((data) => {
+                if (mounted && data.version) {
+                    setVersion(data.version);
+                }
+            })
+            .catch(() => { });
+        return () => {
+            mounted = false;
+        };
+    }, []);
 
     const statusText = queueStatus.running
         ? '队列运行中'
@@ -19,7 +36,7 @@ export function Header() {
                 <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                     🚀 MultiTaskFlow
                 </h1>
-                <span className="text-xs text-slate-500">v1.0.5</span>
+                <span className="text-xs text-slate-500">v{version}</span>
             </div>
             <div className="flex items-center gap-3">
                 <span

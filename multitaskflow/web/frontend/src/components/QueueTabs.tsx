@@ -52,7 +52,7 @@ export function QueueTabs({ onAddQueue }: QueueTabsProps) {
                         title={queue.yaml_path}
                     >
                         {/* Status indicator */}
-                        <span className={`w-2 h-2 rounded-full ${queue.status?.running_count ?? 0 > 0
+                        <span className={`w-2 h-2 rounded-full ${(queue.status?.running_count ?? 0) > 0
                             ? 'bg-emerald-400 animate-pulse'
                             : queue.status?.queue_running
                                 ? 'bg-amber-400'

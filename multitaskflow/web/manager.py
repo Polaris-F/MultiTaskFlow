@@ -47,6 +47,7 @@ class Task:
     error_message: Optional[str] = None
     process: Optional[subprocess.Popen] = field(default=None, repr=False)
     log_file: Optional[str] = None
+    _log_fh: Optional[Any] = field(default=None, repr=False, compare=False)
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典（用于 API 响应）"""
@@ -221,6 +222,21 @@ class TaskManager:
                 # （因为进程已经不存在了，除非被 _restore_running_tasks 恢复）
                 if status == TaskStatus.RUNNING:
                     status = TaskStatus.STOPPED
+
+                # 解析日期时间字段（持久化时为 ISO 字符串）
+                start_time = task_data.get('start_time')
+                if isinstance(start_time, str):
+                    try:
+                        start_time = datetime.fromisoformat(start_time)
+                    except (ValueError, TypeError):
+                        start_time = None
+
+                end_time = task_data.get('end_time')
+                if isinstance(end_time, str):
+                    try:
+                        end_time = datetime.fromisoformat(end_time)
+                    except (ValueError, TypeError):
+                        end_time = None
                 
                 task = Task(
                     id=task_id,
@@ -230,9 +246,8 @@ class TaskManager:
                     gpu=task_data.get('gpu'),
                     note=task_data.get('note'),
                     log_file=task_data.get('log_file'),
-                    start_time=task_data.get('start_time'),
-                    end_time=task_data.get('end_time'),
-                    duration=task_data.get('duration'),
+                    start_time=start_time,
+                    end_time=end_time,
                     error_message=task_data.get('error_message')
                 )
                 
@@ -612,8 +627,8 @@ class TaskManager:
                 task.status = TaskStatus.PENDING
                 task.start_time = None
                 task.end_time = None
-                task.duration = None
                 task.process = None
+                task._log_fh = None
                 task.error_message = None
                 task.log_file = None
                 
@@ -681,7 +696,9 @@ class TaskManager:
         with self._lock:
             # 保留运行中任务的位置，重排待执行任务
             running_ids = [t.id for t in self.get_running_tasks()]
-            self.task_order = running_ids + new_order
+            reordered_set = set(running_ids) | set(new_order)
+            other_ids = [tid for tid in self.task_order if tid not in reordered_set]
+            self.task_order = running_ids + new_order + other_ids
             return True
     
     def get_busy_gpus(self) -> set:
@@ -716,6 +733,18 @@ class TaskManager:
                     return f"GPU {','.join(map(str, conflict))} 正被「{running_task.name}」占用"
         
         return None
+
+    def _close_task_log_file(self, task: Task):
+        """关闭任务日志文件句柄（如果存在）"""
+        log_fh = getattr(task, "_log_fh", None)
+        if not log_fh:
+            return
+        try:
+            log_fh.close()
+        except Exception:
+            pass
+        finally:
+            task._log_fh = None
     
     def run_task(self, task_id: str) -> Task:
         """
@@ -752,29 +781,34 @@ class TaskManager:
         with self._lock:
             task.status = TaskStatus.RUNNING
             task.start_time = datetime.now()
-            
-            log_file = open(task.log_file, 'w', encoding='utf-8')
-            
+            task._log_fh = open(task.log_file, 'w', encoding='utf-8')
+
             # 设置环境变量确保 Python 子进程使用 UTF-8 和无缓冲输出
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
             env['PYTHONUNBUFFERED'] = '1'  # 禁用输出缓冲，实时显示日志
             env['COLUMNS'] = '120'  # 限制终端宽度，使进度条等适配 WebUI 显示
-            
-            # 使用 start_new_session=True 使任务进程独立于 WebUI 进程
-            # 这样 WebUI 重启不会终止正在运行的任务
-            task.process = subprocess.Popen(
-                task.command,
-                shell=True,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                cwd=str(self.config_dir),
-                text=True,
-                encoding='utf-8',
-                env=env,
-                start_new_session=True  # 创建新会话，进程独立
-            )
-            
+
+            try:
+                # 使用 start_new_session=True 使任务进程独立于 WebUI 进程
+                # 这样 WebUI 重启不会终止正在运行的任务
+                task.process = subprocess.Popen(
+                    task.command,
+                    shell=True,
+                    stdout=task._log_fh,
+                    stderr=subprocess.STDOUT,
+                    cwd=str(self.config_dir),
+                    text=True,
+                    encoding='utf-8',
+                    env=env,
+                    start_new_session=True  # 创建新会话，进程独立
+                )
+            except Exception:
+                self._close_task_log_file(task)
+                task.status = TaskStatus.PENDING
+                task.start_time = None
+                raise
+
             # 从待执行列表移除
             if task_id in self.task_order:
                 self.task_order.remove(task_id)
@@ -800,41 +834,52 @@ class TaskManager:
             return
         
         return_code = task.process.wait()
-        task.end_time = datetime.now()
-        
-        # 处理 None 退出码的情况（理论上不应该发生，但做防御性处理）
-        if return_code is None:
-            # 检查进程是否还在运行
-            if task.process.poll() is None:
-                # 进程还在运行，这不应该发生
-                self.logger.warning(f"任务 {task.name} wait() 返回 None 但进程仍在运行")
-                return_code = -1
+        should_finalize = False
+
+        with self._lock:
+            # 如果任务已被 stop_task 处理，跳过
+            if task.id not in self.tasks:
+                should_finalize = False
+            elif task.status == TaskStatus.STOPPED:
+                should_finalize = False
             else:
-                # 进程已结束但退出码为 None，假设正常完成
-                return_code = task.process.returncode if task.process.returncode is not None else 0
-        
-        if return_code == 0:
-            task.status = TaskStatus.COMPLETED
-            self.logger.info(f"任务完成: {task.name}")
-        else:
-            task.status = TaskStatus.FAILED
-            task.error_message = f"退出码: {return_code}"
-            self.logger.error(f"任务失败: {task.name} ({task.error_message})")
-        
+                task.end_time = datetime.now()
+
+                # 处理 None 退出码的情况（理论上不应该发生，但做防御性处理）
+                if return_code is None:
+                    if task.process.poll() is None:
+                        self.logger.warning(f"任务 {task.name} wait() 返回 None 但进程仍在运行")
+                        return_code = -1
+                    else:
+                        return_code = task.process.returncode if task.process.returncode is not None else 0
+
+                if return_code == 0:
+                    task.status = TaskStatus.COMPLETED
+                    self.logger.info(f"任务完成: {task.name}")
+                else:
+                    task.status = TaskStatus.FAILED
+                    task.error_message = f"退出码: {return_code}"
+                    self.logger.error(f"任务失败: {task.name} ({task.error_message})")
+
+                # 从任务列表移除
+                del self.tasks[task.id]
+                should_finalize = True
+
+        # 统一关闭日志文件句柄（包含 stop_task 已处理分支）
+        self._close_task_log_file(task)
+
+        if not should_finalize:
+            return
+
         # 发送通知
         self._send_task_notification(task)
-        
+
         # 添加到历史（持久化）
         self.history_manager.add(task.to_dict())
-        
+
         # 调用完成回调（用于从持久化存储移除 PID）
         if self.on_task_finished:
             self.on_task_finished(task.id)
-        
-        # 从任务列表移除
-        with self._lock:
-            if task.id in self.tasks:
-                del self.tasks[task.id]
     
     def stop_task(self, task_id: str) -> bool:
         """
@@ -870,19 +915,30 @@ class TaskManager:
             except (ProcessLookupError, OSError) as e:
                 # 进程可能已经结束
                 self.logger.warning(f"停止任务进程时出错: {e}")
-            
-            task.status = TaskStatus.STOPPED
-            task.end_time = datetime.now()
-            self.logger.info(f"停止任务: {task.name}")
-            
-            # 添加到历史（持久化）
-            self.history_manager.add(task.to_dict())
-            
-            # 从任务列表移除
+
+            task_dict = None
             with self._lock:
-                if task.id in self.tasks:
-                    del self.tasks[task.id]
-            
+                if task.id not in self.tasks:
+                    self._close_task_log_file(task)
+                    return False
+
+                task.status = TaskStatus.STOPPED
+                task.end_time = datetime.now()
+                task_dict = task.to_dict()
+
+                # 从任务列表移除
+                del self.tasks[task.id]
+
+            self._close_task_log_file(task)
+            self.logger.info(f"停止任务: {task.name}")
+
+            # 添加到历史（持久化）
+            self.history_manager.add(task_dict)
+
+            # 调用完成回调（用于从持久化存储移除 PID）
+            if self.on_task_finished:
+                self.on_task_finished(task.id)
+
             return True
         
         return False
@@ -1009,4 +1065,3 @@ class TaskManager:
             )
         except Exception as e:
             self.logger.warning(f"发送通知失败: {e}")
-

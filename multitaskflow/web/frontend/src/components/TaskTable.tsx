@@ -39,7 +39,7 @@ export function StatusLegend() {
 }
 
 function formatDuration(seconds?: number): string {
-    if (!seconds || seconds < 0) return '-';
+    if (seconds == null || seconds < 0) return '-';
     if (seconds < 60) return `${Math.round(seconds)}s`;
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
     return `${Math.floor(seconds / 3600)}h`;

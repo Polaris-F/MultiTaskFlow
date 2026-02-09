@@ -1,5 +1,43 @@
 # 更新日志
 
+## [1.0.6] - 2026年2月10日
+
+### 修复
+- **[H1] WebSocket 状态推送崩溃**：修复 `/ws/status` 端点引用不存在的 `manager.history` 属性导致 `AttributeError`，状态实时推送完全不可用
+- **[H2] 消息推送重试等待过长**：修复 `Msg_push` 重试逻辑中 `time.sleep` 被重复执行（非 429 场景等待 2 倍、429 场景等待 3 倍预期时间）
+- **[H3] 日志文件句柄泄漏**：修复 `run_task` 中打开的日志文件从未关闭，长时间运行导致文件描述符耗尽
+  - Task dataclass 新增 `_log_fh` 字段追踪句柄
+  - `_monitor_task`、`stop_task`、`retry_task` 中统一关闭
+  - `Popen` 失败时回滚状态并关闭句柄
+- **[H4] 前端 API 层无 HTTP 错误检查**：所有 API 方法增加统一 `handleResponse` 错误处理，正确抛出后端返回的错误信息
+- **[H5] 多队列 retry 找错队列**：修复 `retry_task` API 只在活动任务中查找，现在同时搜索各队列的历史记录
+- **[M1] 任务重排丢失非 pending 任务**：`reorder_tasks` 现在保留不在重排列表中的其他任务
+- **[M2] QueueTabs 运算符优先级 Bug**：修复 `?? 0 > 0` 优先级错误导致队列运行状态指示灯异常
+- **[M3] WebSocket 日志消息解析崩溃**：`LogPanel` 的 WS 消息解析增加 try/catch 防护
+- **[M4] ESC 快捷键穿透弹窗**：ESC 关闭日志面板时现在检测是否有弹窗打开，避免冲突
+- **[M5] stop_task 与 _monitor_task 竞态条件**：两者在锁保护内互斥处理任务状态转换，避免重复写入历史和 KeyError
+- **[M6] 恢复任务时字段类型不匹配**：`_load_from_saved_tasks` 正确将 ISO 字符串转为 `datetime` 对象
+- **[M8] TaskDetailDialog 重复 Toast**：删除/移动操作改为 await 异步完成后再显示提示
+- **[M9] 通知开关未生效**：`send_task_notification` 现在检查 `.workspace.json` 中的 `notification_enabled` 字段
+
+### 优化
+- **[M7] 设置面板精简**：移除未被 TaskTable 消费的无效布局设置项（列宽、自动隐藏列等），保留通知设置并新增通知开关 UI
+- **[L1] Logger Handler 去重**：`_setup_logger` 检查是否已配置，避免重复添加 handler
+- **[L2] CLI 日志目录改为配置文件目录**：日志现在写入 YAML 配置文件所在目录的 `logs/` 下
+- **[L3] 动态加载新任务传递 env 参数**：`check_new_tasks` 创建 Task 时包含 `env` 字段
+- **[L4] 恢复任务使用原始 start_time**：WebUI 重启后从持久化数据恢复任务的实际开始时间
+- **[L5] 零秒时长正确显示**：`formatDuration(0)` 现在显示 `0s` 而非 `-`
+- **[L6] AddQueueDialog 关闭重置表单**：打开时自动清空表单并新增内联错误提示
+- **[L7] 清理 WebSocket 死代码**：移除 `LogStreamer` 中未使用的 `file_positions` 和 `line_buffers`
+- **[L8] Toolbar 防重复点击**：所有操作按钮增加 `actionLoading` 状态保护
+- **[L9] 清理未使用的 prop**：移除 `XTerminal` 的 `onContentUpdate` prop
+- **[L10] Header 版本号动态获取**：从 `/health` API 获取版本号，后端 `/health` 端点返回 `version` 字段
+- **[L11] 版本注释修正**：`__init__.py` 文件头版本注释从 `0.1.5` 改为 `1.0.6`
+- **[L12] 移除误导性安全提示**：LoginPage 底部文字改为中性描述
+- **弹窗 modal 标记**：所有弹窗统一添加 `data-mtf-modal="true"` 属性，配合 ESC 检测
+
+---
+
 ## [1.0.5] - 2026年2月8日
 
 ### 修复

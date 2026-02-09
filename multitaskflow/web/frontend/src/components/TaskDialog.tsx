@@ -82,7 +82,7 @@ export function TaskDialog({ isOpen, onClose, editTask }: TaskDialogProps) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+        <div data-mtf-modal="true" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
             <div
                 className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-700"
                 onClick={(e) => e.stopPropagation()}

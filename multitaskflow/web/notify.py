@@ -155,6 +155,19 @@ def send_task_notification(
     Returns:
         是否发送成功
     """
+    # 先检查通知开关
+    if workspace_dir:
+        workspace_file = workspace_dir / ".workspace.json"
+        if workspace_file.exists():
+            try:
+                import json
+                data = json.loads(workspace_file.read_text())
+                if not data.get("notification_enabled", True):
+                    logger.debug("通知已被用户关闭，跳过")
+                    return False
+            except Exception:
+                pass
+
     token = get_pushplus_token(workspace_dir)
     if not token:
         logger.debug("未配置 PushPlus Token，跳过通知")

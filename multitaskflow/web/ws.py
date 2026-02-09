@@ -62,10 +62,6 @@ class LogStreamer:
     def __init__(self):
         # task_id -> set of websocket connections
         self.connections: Dict[str, Set[WebSocket]] = {}
-        # task_id -> last read position
-        self.file_positions: Dict[str, int] = {}
-        # task_id -> 不完整行的缓冲区（等待下次读取补全）
-        self.line_buffers: Dict[str, str] = {}
     
     async def connect(self, task_id: str, websocket: WebSocket):
         """建立连接"""
@@ -75,10 +71,6 @@ class LogStreamer:
             self.connections[task_id] = set()
         self.connections[task_id].add(websocket)
         
-        # 初始化文件位置
-        if task_id not in self.file_positions:
-            self.file_positions[task_id] = 0
-        
         logger.info(f"WebSocket 连接: task={task_id}")
     
     def disconnect(self, task_id: str, websocket: WebSocket):
@@ -87,9 +79,6 @@ class LogStreamer:
             self.connections[task_id].discard(websocket)
             if not self.connections[task_id]:
                 del self.connections[task_id]
-                # 清理文件位置记录和行缓冲区
-                self.file_positions.pop(task_id, None)
-                self.line_buffers.pop(task_id, None)
         
         logger.info(f"WebSocket 断开: task={task_id}")
     
@@ -276,7 +265,7 @@ async def websocket_status(websocket: WebSocket):
                     current_state = {
                         "pending": [t.to_dict() for t in manager.get_pending_tasks()],
                         "running": [t.to_dict() for t in manager.get_running_tasks()],
-                        "history_count": len(manager.history),
+                        "history_count": manager.history_manager.count(),
                         "busy_gpus": list(manager.get_busy_gpus())
                     }
                 

@@ -72,16 +72,15 @@ export function TaskDetailDialog({ task, isOpen, onClose, onViewLog }: TaskDetai
         }
     };
 
-    const handleDelete = () => {
+    const handleDelete = async () => {
         if (confirm(`确认删除任务 "${task.name}"？`)) {
-            deleteTask(task.id);
+            await deleteTask(task.id);
             onClose();
-            showToast('任务已删除', 'success');
         }
     };
 
-    const handleMove = (direction: number) => {
-        moveTask(task.id, direction);
+    const handleMove = async (direction: number) => {
+        await moveTask(task.id, direction);
         showToast(direction < 0 ? '已上移' : '已下移', 'success');
     };
 
@@ -160,7 +159,7 @@ export function TaskDetailDialog({ task, isOpen, onClose, onViewLog }: TaskDetai
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+        <div data-mtf-modal="true" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
             <div
                 className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl mx-4 overflow-hidden border border-slate-700"
                 onClick={(e) => e.stopPropagation()}

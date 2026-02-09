@@ -2,6 +2,20 @@
 
 const BASE_URL = '';
 
+async function handleResponse<T>(res: Response): Promise<T> {
+    if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try {
+            const data = await res.json();
+            message = data.detail || data.message || message;
+        } catch {
+            // 响应体非 JSON，保持 HTTP 状态码错误信息
+        }
+        throw new Error(message);
+    }
+    return res.json();
+}
+
 export interface Task {
     id: string;
     name: string;
@@ -32,15 +46,20 @@ export interface QueueStatus {
     current_task?: string;
 }
 
+export interface HealthResponse {
+    status: string;
+    version?: string;
+}
+
 export const api = {
     async getTasks(): Promise<TasksResponse> {
         const res = await fetch(`${BASE_URL}/api/tasks`);
-        return res.json();
+        return handleResponse<TasksResponse>(res);
     },
 
     async getHistory(): Promise<HistoryResponse> {
         const res = await fetch(`${BASE_URL}/api/history`);
-        return res.json();
+        return handleResponse<HistoryResponse>(res);
     },
 
     async addTask(task: { name: string; command: string; note?: string }) {
@@ -49,7 +68,7 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(task)
         });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async updateTask(id: string, task: { name: string; command: string; note?: string }) {
@@ -58,37 +77,37 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(task)
         });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async deleteTask(id: string) {
         const res = await fetch(`${BASE_URL}/api/tasks/${id}`, { method: 'DELETE' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async runTask(id: string) {
         const res = await fetch(`${BASE_URL}/api/tasks/${id}/run`, { method: 'POST' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async stopTask(id: string) {
         const res = await fetch(`${BASE_URL}/api/tasks/${id}/stop`, { method: 'POST' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async retryTask(id: string) {
         const res = await fetch(`${BASE_URL}/api/tasks/${id}/retry`, { method: 'POST' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async stopAll() {
         const res = await fetch(`${BASE_URL}/api/stop-all`, { method: 'POST' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async reloadTasks() {
         const res = await fetch(`${BASE_URL}/api/reload`, { method: 'POST' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async reorderTasks(order: string[]) {
@@ -97,22 +116,22 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ order })
         });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async clearHistory() {
         const res = await fetch(`${BASE_URL}/api/history`, { method: 'DELETE' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async checkYaml() {
         const res = await fetch(`${BASE_URL}/api/check-yaml`);
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async loadNewTasks() {
         const res = await fetch(`${BASE_URL}/api/load-new-tasks`, { method: 'POST' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async loadSelectedTasks(tasks: { name: string; command: string; note?: string }[]) {
@@ -121,31 +140,36 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tasks })
         });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async startQueue() {
         const res = await fetch(`${BASE_URL}/api/start-queue`, { method: 'POST' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async stopQueue() {
         const res = await fetch(`${BASE_URL}/api/stop-queue`, { method: 'POST' });
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async getQueueStatus(): Promise<QueueStatus> {
         const res = await fetch(`${BASE_URL}/api/queue-status`);
-        return res.json();
+        return handleResponse<QueueStatus>(res);
     },
 
     async getTaskLog(taskId: string) {
         const res = await fetch(`${BASE_URL}/api/logs/${taskId}`);
-        return res.json();
+        return handleResponse<any>(res);
     },
 
     async getMainLog() {
         const res = await fetch(`${BASE_URL}/api/main-log`);
-        return res.json();
-    }
+        return handleResponse<any>(res);
+    },
+
+    async getHealth(): Promise<HealthResponse> {
+        const res = await fetch(`${BASE_URL}/health`);
+        return handleResponse<HealthResponse>(res);
+    },
 };

@@ -140,7 +140,7 @@ def create_app(config_path: str = None, workspace_dir: str = None) -> FastAPI:
     @app.get("/health")
     async def health():
         """健康检查"""
-        return {"status": "ok"}
+        return {"status": "ok", "version": __version__}
     
     return app
 

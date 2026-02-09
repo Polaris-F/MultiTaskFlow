@@ -218,7 +218,7 @@ export function LoginPage({ onLogin, authEnabled }: LoginPageProps) {
                     {/* Footer */}
                     <div className="px-8 py-4 bg-slate-800/50 border-t border-slate-700 text-center">
                         <p className="text-xs text-slate-500">
-                            🔒 连接已加密保护
+                            MultiTaskFlow Web UI
                         </p>
                     </div>
                 </div>

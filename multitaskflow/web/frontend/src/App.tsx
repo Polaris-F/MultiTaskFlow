@@ -13,6 +13,7 @@ import { TaskDialog } from './components/TaskDialog';
 import { QueueTabs } from './components/QueueTabs';
 import { AddQueueDialog } from './components/AddQueueDialog';
 import { LoginPage } from './components/LoginPage';
+import { useSettingsStore } from './stores/settingsStore';
 
 
 // 认证状态类型
@@ -24,6 +25,7 @@ interface AuthStatus {
 function App() {
   const { refreshTasks, refreshHistory, refreshQueueStatus, setLogPanelOpen, setCurrentLogTask, runningTasks, pendingTasks, history } = useTaskStore();
   const { fetchQueues, queues, currentQueueId, fetchGlobalGpuUsage } = useQueueStore();
+  const { isSettingsOpen } = useSettingsStore();
 
   // 认证状态
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -190,12 +192,16 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && currentLogId) {
+        const hasModalOpen = Boolean(document.querySelector('[data-mtf-modal="true"]'));
+        if (isTaskDialogOpen || isAddQueueDialogOpen || isSettingsOpen || hasModalOpen) {
+          return;
+        }
         handleCloseLog();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentLogId]);
+  }, [currentLogId, isTaskDialogOpen, isAddQueueDialogOpen, isSettingsOpen]);
 
   // 加载中
   if (authLoading) {

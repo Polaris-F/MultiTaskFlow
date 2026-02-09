@@ -219,15 +219,18 @@ class TaskFlow:
             logging.Logger: 配置好的日志记录器
         """
         logger = logging.getLogger("TaskFlow")
+        if logger.handlers:
+            return logger
         logger.setLevel(logging.INFO)
         
         # 确保日志目录存在
-        if not os.path.exists("logs"):
-            os.makedirs("logs")
+        log_dir = self.config_dir / "logs"
+        if not log_dir.exists():
+            log_dir.mkdir(parents=True, exist_ok=True)
             
         # 文件处理器
         fh = logging.FileHandler(
-            f"logs/taskflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+            str(log_dir / f"taskflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"),
             encoding='utf-8'
         )
         fh.setLevel(logging.INFO)
@@ -693,7 +696,8 @@ class TaskFlow:
                     task = Task(
                         name=task_config['name'],
                         command=task_config['command'],
-                        status=task_config.get('status', 'pending')
+                        status=task_config.get('status', 'pending'),
+                        env=task_config.get('env', {})
                     )
                     self.add_task(task)
                     

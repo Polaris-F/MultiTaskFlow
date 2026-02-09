@@ -266,7 +266,14 @@ class QueueManager:
             log_file=log_file,
             note="(WebUI 重启后恢复的任务)"
         )
-        task.start_time = datetime.now()
+        saved_start = self.running_tasks.get(task_id, {}).get('start_time')
+        if saved_start:
+            try:
+                task.start_time = datetime.fromisoformat(saved_start)
+            except (ValueError, TypeError):
+                task.start_time = datetime.now()
+        else:
+            task.start_time = datetime.now()
         
         # 创建一个假的 process 对象用于监控
         # 我们直接通过 PID 监控进程状态
