@@ -22,6 +22,7 @@ import uvicorn
 # 添加父目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from multitaskflow import __version__
 from .manager import TaskManager
 from .queue_manager import QueueManager
 from .state import (
@@ -86,7 +87,7 @@ def create_app(config_path: str = None, workspace_dir: str = None) -> FastAPI:
     app = FastAPI(
         title="MultiTaskFlow",
         description="多任务流管理工具 Web UI",
-        version="1.0.0",
+        version=__version__,
         lifespan=lifespan
     )
     
@@ -174,7 +175,7 @@ def run_server(
         path_info = f"工作空间: {Path.cwd()}"
     
     print(f"\n{'='*60}")
-    print(f"  MultiTaskFlow Web UI v1.0.0")
+    print(f"  MultiTaskFlow Web UI v{__version__}")
     print(f"  模式: {mode}")
     print(f"  访问地址: http://{host}:{port}")
     print(f"  {path_info}")

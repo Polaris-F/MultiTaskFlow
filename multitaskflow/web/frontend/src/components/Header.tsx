@@ -19,7 +19,7 @@ export function Header() {
                 <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                     🚀 MultiTaskFlow
                 </h1>
-                <span className="text-xs text-slate-500">v1.0.0</span>
+                <span className="text-xs text-slate-500">v1.0.5</span>
             </div>
             <div className="flex items-center gap-3">
                 <span
